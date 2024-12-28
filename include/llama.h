@@ -865,6 +865,7 @@ extern "C" {
     // shape: [n_outputs*n_embd]
     // Otherwise, returns NULL.
     LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
+    LLAMA_API float * llama_get_embeddings_enc(struct llama_context * ctx);
 
     // Get the embeddings for the ith token. For positive indices, Equivalent to:
     // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd

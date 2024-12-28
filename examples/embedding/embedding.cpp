@@ -109,10 +109,10 @@ int main(int argc, char ** argv) {
 
     const enum llama_pooling_type pooling_type = llama_pooling_type(ctx);
 
-    if (llama_model_has_encoder(model) && llama_model_has_decoder(model)) {
-        LOG_ERR("%s: computing embeddings in encoder-decoder models is not supported\n", __func__);
-        return 1;
-    }
+    //if (llama_model_has_encoder(model) && llama_model_has_decoder(model)) {
+    //    LOG_ERR("%s: computing embeddings in encoder-decoder models is not supported\n", __func__);
+    //    return 1;
+    //}
 
     if (n_ctx > n_ctx_train) {
         LOG_WRN("%s: warning: model was trained on only %d context tokens (%d specified)\n",
@@ -130,7 +130,7 @@ int main(int argc, char ** argv) {
 
     // max batch size
     const uint64_t n_batch = params.n_batch;
-    GGML_ASSERT(params.n_batch >= params.n_ctx);
+    //GGML_ASSERT(params.n_batch >= params.n_ctx);
 
     // tokenize the prompts and trim
     std::vector<std::vector<int32_t>> inputs;

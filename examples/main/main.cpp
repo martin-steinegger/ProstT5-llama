@@ -487,12 +487,37 @@ int main(int argc, char ** argv) {
     if (llama_model_has_encoder(model)) {
         int enc_input_size = embd_inp.size();
         llama_token * enc_input_buf = embd_inp.data();
+        
+
+        llama_set_embeddings(ctx, true);
+
 
         if (llama_encode(ctx, llama_batch_get_one(enc_input_buf, enc_input_size))) {
             LOG_ERR("%s : failed to eval\n", __func__);
             return 1;
         }
+    // Retrieve encoder embeddings
+    float* embeddings = llama_get_embeddings(ctx);
+    if (embeddings == nullptr) {
+        LOG_ERR("%s : failed to retrieve embeddings\n", __func__);
+        return 1;
+    }
 
+    // Log the embeddings (assuming n_embd is the embedding size per token)
+    int n_embd = llama_n_embd(model);
+    LOG_INF("Encoder embeddings:\n");
+    LOG_INF("n_embd = %d\n", n_embd);
+    //LOG_INF("embeddings[0]=%f embeddings[500]=%f\n", embeddings[0], embeddings[534]);
+    for (int i = 0; i < enc_input_size; ++i) {
+        LOG_INF("Token %d:", i);
+        float * embedpos = llama_get_embeddings_ith(ctx, i);
+        for (int j = 0; j < n_embd; ++j) {
+            printf("%.6f ", embedpos[j]);
+        }
+        printf("\n");
+    }         
+
+ 
         llama_token decoder_start_token_id = llama_model_decoder_start_token(model);
         if (decoder_start_token_id == -1) {
             decoder_start_token_id = llama_token_bos(model);

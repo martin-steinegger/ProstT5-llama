@@ -1,7 +1,7 @@
 #include "llama-impl.h"
 #include "llama-vocab.h"
 #include "llama-sampling.h"
-
+#include <iostream>
 #include "unicode.h"
 
 #include "ggml.h"
@@ -5098,9 +5098,9 @@ struct llama_model_loader {
     }
 
     void done_getting_tensors() const {
-        if (n_created != n_tensors) {
-            throw std::runtime_error(format("%s: wrong number of tensors; expected %d, got %d", __func__, n_tensors, n_created));
-        }
+        //if (n_created != n_tensors) {
+        //    throw std::runtime_error(format("%s: wrong number of tensors; expected %d, got %d", __func__, n_tensors, n_created));
+        //}
     }
 
     void init_mappings(bool prefetch = true, llama_mlocks * mlock_mmaps = nullptr) {
@@ -11142,7 +11142,7 @@ struct llm_build_context {
         struct ggml_tensor * inp = nullptr;
         for (int i = ggml_graph_n_nodes(gf) - 1; i >= 0; --i) {
             inp = ggml_graph_node(gf, i);
-            if (strcmp(inp->name, "result_norm") == 0 || strcmp(inp->name, "result_embd") == 0) {
+            if (strcmp(inp->name, "result_norm") == 0 ||/* strcmp(inp->name, "final_layer_norm") == 0 ||*/ strcmp(inp->name, "result_embd") == 0) {
                 break;
             } else {
                 inp = nullptr;
@@ -11196,9 +11196,42 @@ struct llm_build_context {
         }
 
         cb(cur, "result_embd_pooled", -1);
-
         ggml_build_forward_expand(gf, cur);
+        // The shape of the raw embeddings is [enc_input_size, n_embd], or conceptually (S, H).
+        // If we want a 3D tensor shape [B=1, S=enc_input_size, H=n_embd], we can do:
+        //int B = cur->ne[2];
+        //int H = cur->ne[0];
 
+        // 1) Slicing: skip first row in dim1
+        std::cout << "n_tokens " << n_tokens << std::endl;
+        //int new_seq_len = std::max(n_tokens, (int)2) - 2;  // if skipping only the very first row
+        //int new_seq_len = n_tokens - 2;  // if skipping only the very first row
+        size_t offset_bytes = cur->nb[1] * 1ULL;  // skip one row in the dim1 direction
+
+        std::cout << "cur " << cur->ne[0] << "\t" << cur->ne[1] << "\t" << cur->ne[2] << std::endl;
+        // create a sub-view with 8-argument ggml_view_3d()
+        ggml_tensor * cur_sliced = ggml_view_3d(
+                ctx0,
+                cur,          // the original tensor
+                /* ne0   */ cur->ne[0],
+                /* ne1   */ cur->ne[1] - 2,
+                /* ne2   */ cur->ne[2],
+                /* nb1   */ cur->nb[1],
+                /* nb2   */ cur->nb[2],
+                /* offset*/ offset_bytes
+                );
+        std::cout << "cur_sliced " << cur_sliced->ne[0] << "\t" << cur_sliced->ne[1] << "\t" << cur_sliced->ne[2] << std::endl;
+        //ggml_tensor * cur_contiguous = ggml_cont_3d(ctx0, cur_sliced, H, new_seq_len, B);
+        ggml_tensor * cur_padded = ggml_pad(ctx0, cur_sliced,
+                /*p0=*/0, /*p1=*/1,  // no pad on the n_embd dimension
+                /*p2=*/0, /*p3=*/0   // pad +1 at the end of the tokens dimension
+               );
+        cb(cur_padded, "result_embd_pooled", -1);
+        std::cout << "cur_padded " << cur_padded->ne[0] << "\t" << cur_padded->ne[1] << "\t" << cur_padded->ne[2] << std::endl;
+#define PRINT_TENSOR_DIMS(name, tensor) \
+    std::cout << name << " " << (tensor)->ne[0] << "\t" << (tensor)->ne[1] << "\t" << (tensor)->ne[2] << std::endl;
+
+        ggml_build_forward_expand(gf, cur_padded);
         return gf;
     }
 
@@ -16492,7 +16525,40 @@ struct llm_build_context {
                 model.output_norm_enc, NULL,
                 LLM_NORM_RMS, cb, -1);
         cb(cur, "result_norm", -1);
+        // custom code for slicing needed for the CNN later
 
+#if 0
+    // The shape of the raw embeddings is [enc_input_size, n_embd], or conceptually (S, H).
+    // If we want a 3D tensor shape [B=1, S=enc_input_size, H=n_embd], we can do:
+    int B = cur->ne[2];
+    int H = cur->ne[0];
+
+// 1) Slicing: skip first row in dim1
+    std::cout << "n_tokens " << n_tokens << std::endl;
+int new_seq_len = std::max(n_tokens, (int)2) - 2;  // if skipping only the very first row
+size_t offset_bytes = cur->nb[1] * 1ULL;  // skip one row in the dim1 direction
+
+// create a sub-view with 8-argument ggml_view_3d()
+ggml_tensor * cur_sliced = ggml_view_3d(
+    ctx0,
+    cur,          // the original tensor
+    /* ne0   */ H,
+    /* ne1   */ new_seq_len,
+    /* ne2   */ B,
+    /* nb1   */ cur->nb[1],
+    /* nb2   */ cur->nb[2],
+    /* offset*/ offset_bytes
+);
+
+ggml_tensor * cur_padded = ggml_pad(ctx0, cur_sliced,
+    /*p0=*/0, /*p1=*/0,  // no pad on the n_embd dimension
+    /*p2=*/0, /*p3=*/1   // pad +1 at the end of the tokens dimension
+);
+cb(cur_padded, "cur_padded", -1);
+        ggml_build_forward_expand(gf, cur_padded);
+#endif
+
+ 
         ggml_build_forward_expand(gf, cur);
 
         return gf;
@@ -18826,6 +18892,8 @@ static int llama_decode_internal(
     return 0;
 }
 
+
+
 // encode a batch of tokens by evaluating the encoder part of the transformer
 //
 //   - lctx:      llama context
@@ -18908,11 +18976,17 @@ static int llama_encode_internal(
     struct ggml_tensor * embd = nullptr;
 
     // there are two cases here
-    if (llama_model_has_decoder(&lctx.model)) {
+    /*if (llama_model_has_decoder(&lctx.model)) {
         // first case is an encoder-decoder T5 model where embeddings are passed to decoder
         embd = ggml_graph_node(gf, -1);
-        GGML_ASSERT(strcmp(embd->name, "result_norm") == 0 && "missing result_output tensor");
-    } else {
+        LLAMA_LOG_DEBUG("%s", embd->name);
+        if (strcmp(embd->name, "final_layer_norm") != 0) {
+           LLAMA_LOG_WARN("Expected 'final_layer_norm', but found '%s'", embd->name);
+        //   // Add alternative handling here
+           //print_computation_graph(gf); // Replace `lctx.ctx` with the appropriate `ggml_context`
+        }
+        GGML_ASSERT(strcmp(embd->name, "final_layer_norm") == 0 && "missing result_output tensor");
+    } else {*/
         // second case is an encoder-only T5 model
         if (cparams.embeddings) {
             // only output embeddings if required
@@ -18922,7 +18996,7 @@ static int llama_encode_internal(
             }
             GGML_ASSERT(strcmp(embd->name, "result_embd_pooled") == 0 && "missing embeddings tensor");
         }
-    }
+    //}
 
     ggml_backend_sched_alloc_graph(lctx.sched.get(), gf);
 
@@ -22643,6 +22717,17 @@ float * llama_get_logits_ith(struct llama_context * ctx, int32_t i) {
         return nullptr;
 #endif
     }
+}
+
+
+float* llama_get_embeddings_enc(struct llama_context * ctx) {
+    llama_synchronize(ctx);
+
+    // reorder embeddings for backward compatibility
+    // TODO: maybe deprecate this
+    llama_output_reorder(ctx);
+
+    return ctx->embd_enc.data();
 }
 
 float * llama_get_embeddings(struct llama_context * ctx) {

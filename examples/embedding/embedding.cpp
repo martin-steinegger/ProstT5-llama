@@ -2,9 +2,9 @@
 #include "common.h"
 #include "log.h"
 #include "llama.h"
-
 #include <ctime>
-
+#include <iostream>
+#include <fstream>
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
@@ -25,57 +25,126 @@ static std::vector<std::string> split_lines(const std::string & s, const std::st
     return lines;
 }
 
-static void batch_add_seq(llama_batch & batch, const std::vector<int32_t> & tokens, llama_seq_id seq_id) {
-    size_t n_tokens = tokens.size();
-    for (size_t i = 0; i < n_tokens; i++) {
-        common_batch_add(batch, tokens[i], i, { seq_id }, true);
+// Function to format a sequence for <AA2fold> with preallocated memory
+void format_sequence(const std::string &sequence, std::string &output) {
+    output = "<AA2fold>";
+    output.reserve(sequence.length() * 2 + 10); // Preallocate memory
+    for (size_t i = 0; i < sequence.length(); ++i) {
+        output += " ";
+        output += sequence[i];
     }
 }
 
-static void batch_decode(llama_context * ctx, llama_batch & batch, float * output, int n_seq, int n_embd, int embd_norm) {
-    const enum llama_pooling_type pooling_type = llama_pooling_type(ctx);
+
+char number_to_char(unsigned int n) {
+    switch(n) {
+        case 0:  return 'A';
+        case 1:  return 'C';
+        case 2:  return 'D';
+        case 3:  return 'E';
+        case 4:  return 'F';
+        case 5:  return 'G';
+        case 6:  return 'H';
+        case 7:  return 'I';
+        case 8:  return 'K';
+        case 9:  return 'L';
+        case 10: return 'M';
+        case 11: return 'N';
+        case 12: return 'P';
+        case 13: return 'Q';
+        case 14: return 'R';
+        case 15: return 'S';
+        case 16: return 'T';
+        case 17: return 'V';
+        case 18: return 'W';
+        case 19: return 'Y';
+        default: return 'X'; // Default case for numbers not in the list
+    }
+}
+
+
+// Function to read a FASTA file and store the sequences in a vector of pairs
+std::vector<std::pair<std::string, std::string>> read_fasta(const std::string &filename) {
+    std::vector<std::pair<std::string, std::string>> fastaSequences;
+    std::ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file " << filename << std::endl;
+        return fastaSequences;
+    }
+
+    std::string line;
+    std::string header;
+    std::string sequence;
+
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        if (line[0] == '>') { // Header line
+            if (!header.empty()) {
+                // Store the previous sequence
+                fastaSequences.emplace_back(header, sequence);
+            }
+            header = line.substr(1); // Remove '>'
+            sequence.clear();
+        } else {
+            sequence += line; // Append sequence lines
+        }
+    }
+
+    // Store the last sequence
+    if (!header.empty()) {
+        fastaSequences.emplace_back(header, sequence);
+    }
+
+    file.close();
+    return fastaSequences;
+}
+
+static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std::string & result) {
     const struct llama_model * model = llama_get_model(ctx);
 
     // clear previous kv_cache values (irrelevant for embeddings)
     llama_kv_cache_clear(ctx);
-
+    llama_set_embeddings(ctx, true);
     // run model
-    LOG_INF("%s: n_tokens = %d, n_seq = %d\n", __func__, batch.n_tokens, n_seq);
     if (llama_model_has_encoder(model) && !llama_model_has_decoder(model)) {
-        // encoder-only model
-        if (llama_encode(ctx, batch) < 0) {
+        if (llama_encode(ctx, llama_batch_get_one(enc_input.data(), enc_input.size())) < 0) {
             LOG_ERR("%s : failed to encode\n", __func__);
         }
-    } else if (!llama_model_has_encoder(model) && llama_model_has_decoder(model)) {
-        // decoder-only model
-        if (llama_decode(ctx, batch) < 0) {
-            LOG_ERR("%s : failed to decode\n", __func__);
+    } else { 
+        LOG_ERR("%s : no encoder\n", __func__);
+        return 1;
+    }
+    // Log the embeddings (assuming n_embd is the embedding size per token)
+    
+    LOG_INF("%s: n_tokens = %zu, n_seq = %d\n", __func__, enc_input.size(), 1);
+    float* embeddings = llama_get_embeddings(ctx);
+    if (embeddings == nullptr) {
+        LOG_ERR("%s : failed to retrieve embeddings\n", __func__);
+        return 1;
+    }
+    int * arg_max_idx = new int[enc_input.size()];
+    float * arg_max = new float[enc_input.size()];
+    std::fill(arg_max, arg_max + enc_input.size(), std::numeric_limits<float>::min());
+    int seq_len = enc_input.size() - 1;
+    for (int i = 0; i < 20; ++i) {
+        for (int j = 0; j < seq_len; ++j) {
+            if(embeddings[i*seq_len + j] > arg_max[j]){
+               arg_max_idx[j] = i;
+               arg_max[j] = embeddings[i*seq_len + j];
+            }
         }
     }
-
-    for (int i = 0; i < batch.n_tokens; i++) {
-        if (!batch.logits[i]) {
-            continue;
-        }
-
-        const float * embd = nullptr;
-        int embd_pos = 0;
-
-        if (pooling_type == LLAMA_POOLING_TYPE_NONE) {
-            // try to get token embeddings
-            embd = llama_get_embeddings_ith(ctx, i);
-            embd_pos = i;
-            GGML_ASSERT(embd != NULL && "failed to get token embeddings");
-        } else {
-            // try to get sequence embeddings - supported only when pooling_type is not NONE
-            embd = llama_get_embeddings_seq(ctx, batch.seq_id[i][0]);
-            embd_pos = batch.seq_id[i][0];
-            GGML_ASSERT(embd != NULL && "failed to get sequence embeddings");
-        }
-
-        float * out = output + embd_pos * n_embd;
-        common_embd_normalize(embd, out, n_embd, embd_norm);
+    for (int i = 0; i < seq_len; ++i) {
+        result.push_back(number_to_char(arg_max_idx[i]));
     }
+    printf("\n");
+    delete [] arg_max_idx;
+    delete [] arg_max;
+    return 0;
 }
 
 int main(int argc, char ** argv) {
@@ -88,12 +157,8 @@ int main(int argc, char ** argv) {
 
     common_init();
 
-    //params.embedding = true;
     // For non-causal models, batch size must be equal to ubatch size
     params.n_ubatch = params.n_batch;
-    //params.n_keep = 32;
-    //params.n_predict = 32;
-    //params.n_batch = 32;
     llama_backend_init();
     llama_numa_init(params.numa);
 
@@ -169,7 +234,6 @@ int main(int argc, char ** argv) {
 
     // initialize batch
     const int n_prompts = prompts.size();
-    struct llama_batch batch = llama_batch_init(n_batch, 0, 1);
 
     // count number of embeddings
     int n_embd_count = 0;
@@ -184,140 +248,33 @@ int main(int argc, char ** argv) {
     // allocate output
     const int n_embd = llama_n_embd(model);
     std::vector<float> embeddings(n_embd_count * n_embd, 0);
-    float * emb = embeddings.data();
-
-    // break into batches
-    int e = 0; // number of embeddings already stored
-    int s = 0; // number of prompts in current batch
-    for (int k = 0; k < n_prompts; k++) {
-        // clamp to n_batch tokens
-        auto & inp = inputs[k];
-
-        const uint64_t n_toks = inp.size();
-
-        // encode if at capacity
-        if (batch.n_tokens + n_toks > n_batch) {
-            float * out = emb + e * n_embd;
-            batch_decode(ctx, batch, out, s, n_embd, params.embd_normalize);
-            e += pooling_type == LLAMA_POOLING_TYPE_NONE ? batch.n_tokens : s;
-            s = 0;
-            common_batch_clear(batch);
-        }
-
-        // add to batch
-        batch_add_seq(batch, inp, s);
-        s += 1;
+    std::string result;
+    std::vector<std::pair<std::string, std::string>> fastaData = read_fasta("test2.fasta");
+    std::string prompt;
+    for (const auto &entry : fastaData) {
+        const std::string &sequence = entry.second; 
+        prompt.clear();
+        result.clear();
+        if(sequence.size() > 1024)
+            continue;
+        printf("AA:  %s\n", sequence.c_str());
+        format_sequence(sequence, prompt);
+        std::vector<llama_token> embd_inp = common_tokenize(ctx, prompt, true, true);
+        encode(ctx, embd_inp, result);
+        printf("3Di: %s\n", result.c_str());
     }
 
-    // final batch
-    float * out = emb + e * n_embd;
-    batch_decode(ctx, batch, out, s, n_embd, params.embd_normalize);
 
-    if (params.embd_out.empty()) {
-        LOG("\n");
+    //for (const auto & prompt : prompts) {
+    //    embd_inp = common_tokenize(ctx, prompt, true, true);
+    //    // encode if at capacity
+    //    encode(ctx, embd_inp, result);
+    //    printf("%s\n", result.c_str());
+    //}
 
-        if (pooling_type == LLAMA_POOLING_TYPE_NONE) {
-            for (int j = 0; j < n_embd_count; j++) {
-                LOG("embedding %d: ", j);
-                for (int i = 0; i < std::min(3, n_embd); i++) {
-                    if (params.embd_normalize == 0) {
-                        LOG("%6.0f ", emb[j * n_embd + i]);
-                    } else {
-                        LOG("%9.6f ", emb[j * n_embd + i]);
-                    }
-                }
-                LOG(" ... ");
-                for (int i = n_embd - 3; i < n_embd; i++) {
-                    if (params.embd_normalize == 0) {
-                        LOG("%6.0f ", emb[j * n_embd + i]);
-                    } else {
-                        LOG("%9.6f ", emb[j * n_embd + i]);
-                    }
-                }
-                LOG("\n");
-            }
-        } else if (pooling_type == LLAMA_POOLING_TYPE_RANK) {
-            for (int j = 0; j < n_embd_count; j++) {
-                // NOTE: if you change this log - update the tests in ci/run.sh
-                LOG("rerank score %d: %8.3f\n", j, emb[j * n_embd]);
-            }
-        } else {
-            // print the first part of the embeddings or for a single prompt, the full embedding
-            for (int j = 0; j < n_prompts; j++) {
-                LOG("embedding %d: ", j);
-                for (int i = 0; i < (n_prompts > 1 ? std::min(16, n_embd) : n_embd); i++) {
-                    if (params.embd_normalize == 0) {
-                        LOG("%6.0f ", emb[j * n_embd + i]);
-                    } else {
-                        LOG("%9.6f ", emb[j * n_embd + i]);
-                    }
-                }
-                LOG("\n");
-            }
-
-            // print cosine similarity matrix
-            if (n_prompts > 1) {
-                LOG("\n");
-                LOG("cosine similarity matrix:\n\n");
-                for (int i = 0; i < n_prompts; i++) {
-                    LOG("%6.6s ", prompts[i].c_str());
-                }
-                LOG("\n");
-                for (int i = 0; i < n_prompts; i++) {
-                    for (int j = 0; j < n_prompts; j++) {
-                        float sim = common_embd_similarity_cos(emb + i * n_embd, emb + j * n_embd, n_embd);
-                        LOG("%6.2f ", sim);
-                    }
-                    LOG("%1.10s", prompts[i].c_str());
-                    LOG("\n");
-                }
-            }
-        }
-    }
-
-    if (params.embd_out == "json" || params.embd_out == "json+" || params.embd_out == "array") {
-        const bool notArray = params.embd_out != "array";
-
-        LOG(notArray ? "{\n  \"object\": \"list\",\n  \"data\": [\n" : "[");
-        for (int j = 0;;) { // at least one iteration (one prompt)
-            if (notArray) LOG("    {\n      \"object\": \"embedding\",\n      \"index\": %d,\n      \"embedding\": ",j);
-            LOG("[");
-            for (int i = 0;;) { // at least one iteration (n_embd > 0)
-                LOG(params.embd_normalize == 0 ? "%1.0f" : "%1.7f", emb[j * n_embd + i]);
-                i++;
-                if (i < n_embd) LOG(","); else break;
-            }
-            LOG(notArray ? "]\n    }" : "]");
-            j++;
-            if (j < n_embd_count) LOG(notArray ? ",\n" : ","); else break;
-        }
-        LOG(notArray ? "\n  ]" : "]\n");
-
-        if (params.embd_out == "json+" && n_prompts > 1) {
-            LOG(",\n  \"cosineSimilarity\": [\n");
-            for (int i = 0;;) { // at least two iteration (n_embd_count > 1)
-                LOG("    [");
-                for (int j = 0;;) { // at least two iteration (n_embd_count > 1)
-                    float sim = common_embd_similarity_cos(emb + i * n_embd, emb + j * n_embd, n_embd);
-                    LOG("%6.2f", sim);
-                    j++;
-                    if (j < n_embd_count) LOG(", "); else break;
-                }
-                LOG(" ]");
-                i++;
-                if (i < n_embd_count) LOG(",\n"); else break;
-            }
-            LOG("\n  ]");
-        }
-
-        if (notArray) LOG("\n}\n");
-    }
-
-    LOG("\n");
     llama_perf_context_print(ctx);
 
     // clean up
-    llama_batch_free(batch);
     llama_free(ctx);
     llama_free_model(model);
     llama_backend_free();

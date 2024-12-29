@@ -81,16 +81,19 @@ static void batch_decode(llama_context * ctx, llama_batch & batch, float * outpu
 int main(int argc, char ** argv) {
     common_params params;
 
-    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_EMBEDDING)) {
+    //if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_EMBEDDING)) {
+    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN)) {
         return 1;
     }
 
     common_init();
 
-    params.embedding = true;
+    //params.embedding = true;
     // For non-causal models, batch size must be equal to ubatch size
     params.n_ubatch = params.n_batch;
-
+    //params.n_keep = 32;
+    //params.n_predict = 32;
+    //params.n_batch = 32;
     llama_backend_init();
     llama_numa_init(params.numa);
 
@@ -143,7 +146,6 @@ int main(int argc, char ** argv) {
         }
         inputs.push_back(inp);
     }
-
     // check if the last token is SEP
     // it should be automatically added by the tokenizer when 'tokenizer.ggml.add_eos_token' is set to 'true'
     for (auto & inp : inputs) {

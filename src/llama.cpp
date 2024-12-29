@@ -1515,6 +1515,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ENC_FFN_GATE,         "enc.blk.%d.ffn_gate" },
             { LLM_TENSOR_ENC_FFN_DOWN,         "enc.blk.%d.ffn_down" },
             { LLM_TENSOR_ENC_FFN_UP,           "enc.blk.%d.ffn_up" },
+            { LLM_TENSOR_CONV1D,               "classifier.%d" },
         },
     },
     {
@@ -2975,6 +2976,8 @@ struct llama_layer {
     struct llama_layer_posnet posnet;
 
     struct llama_layer_convnext convnext;
+
+
 };
 
 // very similar to llama_batch,
@@ -3107,6 +3110,12 @@ struct llama_model {
 
     struct ggml_tensor * conv1d = nullptr;
     struct ggml_tensor * conv1d_b = nullptr;
+
+    // prostt5
+    struct ggml_tensor * conv0   = nullptr;
+    struct ggml_tensor * conv0_b = nullptr;
+    struct ggml_tensor * conv3   = nullptr;
+    struct ggml_tensor * conv3_b = nullptr;
 
     std::vector<llama_layer> layers;
 
@@ -7858,9 +7867,9 @@ static bool llm_load_tensors(
 
             // sanity checks
             if (info.layer == LLM_TENSOR_LAYER_INPUT || info.layer == LLM_TENSOR_LAYER_OUTPUT) {
-                if (tn.bid != -1) {
-                    GGML_ABORT("input/output layer tensor %s used with a layer number", tn.str().c_str());
-                }
+                //if (tn.bid != -1) {
+                //    GGML_ABORT("input/output layer tensor %s used with a layer number", tn.str().c_str());
+                //}
             } else {
                 if (tn.bid == -1) {
                     GGML_ABORT("repeating layer tensor %s used without a layer number", tn.str().c_str());
@@ -9387,6 +9396,11 @@ static bool llm_load_tensors(
                         layer.ffn_down_enc = create_tensor(tn(LLM_TENSOR_ENC_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up_enc   = create_tensor(tn(LLM_TENSOR_ENC_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
+                    std::cout << "loading t5 conv" << std::endl;
+                    model.conv0 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 0), {1, 7, 1024, 32}, 0); // kw, kh, ic, oc 
+                    model.conv0_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 0), {32}, 0); // oc
+                    model.conv3 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 3), {1,     7,    32,    20}, 0);
+                    model.conv3_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 3), {20}, 0);
                 } break;
             case LLM_ARCH_JAIS:
                 {
@@ -11226,12 +11240,41 @@ struct llm_build_context {
                 /*p0=*/0, /*p1=*/1,  // no pad on the n_embd dimension
                 /*p2=*/0, /*p3=*/0   // pad +1 at the end of the tokens dimension
                );
-        cb(cur_padded, "result_embd_pooled", -1);
-        std::cout << "cur_padded " << cur_padded->ne[0] << "\t" << cur_padded->ne[1] << "\t" << cur_padded->ne[2] << std::endl;
+        cb(cur_padded, "result_embd_pooled_old", -1);
+        ggml_tensor* permuted_tensor = ggml_permute(ctx0, cur_padded,  2, 1, 0, 3); // New order: 0 -> 0, 1 -> 2, 2 -> 1, 3 remains unchanged
+        ggml_tensor* unsqueezed_tensor = ggml_reshape_4d(
+            ctx0, ggml_cont(ctx0, permuted_tensor),
+            permuted_tensor->ne[0],   // Dimension 0 (unchanged)
+            permuted_tensor->ne[1],   // Dimension 1 (unchanged)
+            permuted_tensor->ne[2],   // Dimension 2 (unchanged)
+            1                    // New singleton dimension
+        );
+         
+        // Check the new dimensions
 #define PRINT_TENSOR_DIMS(name, tensor) \
-    std::cout << name << " " << (tensor)->ne[0] << "\t" << (tensor)->ne[1] << "\t" << (tensor)->ne[2] << std::endl;
+    std::cout << name << " " << (tensor)->ne[0] << "\t" << (tensor)->ne[1] << "\t" << (tensor)->ne[2] << "\t" << (tensor)->ne[3] << std::endl;
+        
+        PRINT_TENSOR_DIMS("unsqueezed_tensor", unsqueezed_tensor)
+        std::cout << "cur_padded " << cur_padded->ne[0] << "\t" << cur_padded->ne[1] << "\t" << cur_padded->ne[2] << std::endl;
+        PRINT_TENSOR_DIMS("permuted_tensor", permuted_tensor)
+        PRINT_TENSOR_DIMS("conv0", model.conv0)
+        ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, model.conv0, unsqueezed_tensor, 1, 1, 0, 3, 1, 1);
+        PRINT_TENSOR_DIMS("cur_conv0", cur_conv0)
+        PRINT_TENSOR_DIMS("model.conv0_b", model.conv0_b)
+        ggml_tensor* cur_conv0b = ggml_add(ctx0, cur_conv0, ggml_reshape_4d(ctx0, model.conv0_b, 1, 1, 32, 1));
+        ggml_build_forward_expand(gf, cur_conv0b);
 
-        ggml_build_forward_expand(gf, cur_padded);
+        //cb(cur_conv0b, "result_embd_pooled", -1);
+        PRINT_TENSOR_DIMS("cur_conv0b", cur_conv0b)
+        ggml_tensor* cur_relu = ggml_relu(ctx0, cur_conv0b);
+        PRINT_TENSOR_DIMS("cur_relu", cur_relu)
+        ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, model.conv3, cur_relu, 1, 1, 0, 3, 1, 1);
+        PRINT_TENSOR_DIMS("cur_conv3", cur_conv3)
+        ggml_tensor* cur_conv3b = ggml_add(ctx0, cur_conv3, ggml_reshape_4d(ctx0, model.conv3_b, 1, 1, 20, 1));
+        PRINT_TENSOR_DIMS("cur_conv3b", cur_conv3b)
+        ggml_build_forward_expand(gf, cur_conv3b);
+        cb(cur_conv3b, "result_embd_pooled", -1);
+
         return gf;
     }
 
@@ -19046,7 +19089,9 @@ static int llama_encode_internal(
                         float * embd_out = lctx.embd;
 
                         GGML_ASSERT(n_tokens*n_embd <= (int64_t) lctx.embd_size);
-                        ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_tokens*n_embd*sizeof(float));
+                        int out_channels = 20;
+                        ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, (n_tokens - 1)*out_channels*sizeof(float));
+                        //ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_tokens*n_embd*sizeof(float));
                     } break;
                 case LLAMA_POOLING_TYPE_MEAN:
                 case LLAMA_POOLING_TYPE_CLS:

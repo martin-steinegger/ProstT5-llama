@@ -11217,12 +11217,12 @@ struct llm_build_context {
         //int H = cur->ne[0];
 
         // 1) Slicing: skip first row in dim1
-        std::cout << "n_tokens " << n_tokens << std::endl;
+        //std::cout << "n_tokens " << n_tokens << std::endl;
         //int new_seq_len = std::max(n_tokens, (int)2) - 2;  // if skipping only the very first row
         //int new_seq_len = n_tokens - 2;  // if skipping only the very first row
         size_t offset_bytes = cur->nb[1] * 1ULL;  // skip one row in the dim1 direction
 
-        std::cout << "cur " << cur->ne[0] << "\t" << cur->ne[1] << "\t" << cur->ne[2] << std::endl;
+        //std::cout << "cur " << cur->ne[0] << "\t" << cur->ne[1] << "\t" << cur->ne[2] << std::endl;
         // create a sub-view with 8-argument ggml_view_3d()
         ggml_tensor * cur_sliced = ggml_view_3d(
                 ctx0,
@@ -11234,7 +11234,7 @@ struct llm_build_context {
                 /* nb2   */ cur->nb[2],
                 /* offset*/ offset_bytes
                 );
-        std::cout << "cur_sliced " << cur_sliced->ne[0] << "\t" << cur_sliced->ne[1] << "\t" << cur_sliced->ne[2] << std::endl;
+        //std::cout << "cur_sliced " << cur_sliced->ne[0] << "\t" << cur_sliced->ne[1] << "\t" << cur_sliced->ne[2] << std::endl;
         //ggml_tensor * cur_contiguous = ggml_cont_3d(ctx0, cur_sliced, H, new_seq_len, B);
         ggml_tensor * cur_padded = ggml_pad(ctx0, cur_sliced,
                 /*p0=*/0, /*p1=*/1,  // no pad on the n_embd dimension
@@ -11254,24 +11254,24 @@ struct llm_build_context {
 #define PRINT_TENSOR_DIMS(name, tensor) \
     std::cout << name << " " << (tensor)->ne[0] << "\t" << (tensor)->ne[1] << "\t" << (tensor)->ne[2] << "\t" << (tensor)->ne[3] << std::endl;
         
-        PRINT_TENSOR_DIMS("unsqueezed_tensor", unsqueezed_tensor)
-        std::cout << "cur_padded " << cur_padded->ne[0] << "\t" << cur_padded->ne[1] << "\t" << cur_padded->ne[2] << std::endl;
-        PRINT_TENSOR_DIMS("permuted_tensor", permuted_tensor)
-        PRINT_TENSOR_DIMS("conv0", model.conv0)
+        //PRINT_TENSOR_DIMS("unsqueezed_tensor", unsqueezed_tensor)
+        //std::cout << "cur_padded " << cur_padded->ne[0] << "\t" << cur_padded->ne[1] << "\t" << cur_padded->ne[2] << std::endl;
+        //PRINT_TENSOR_DIMS("permuted_tensor", permuted_tensor)
+        //PRINT_TENSOR_DIMS("conv0", model.conv0)
         ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, model.conv0, unsqueezed_tensor, 1, 1, 0, 3, 1, 1);
-        PRINT_TENSOR_DIMS("cur_conv0", cur_conv0)
-        PRINT_TENSOR_DIMS("model.conv0_b", model.conv0_b)
+        //PRINT_TENSOR_DIMS("cur_conv0", cur_conv0)
+        //PRINT_TENSOR_DIMS("model.conv0_b", model.conv0_b)
         ggml_tensor* cur_conv0b = ggml_add(ctx0, cur_conv0, ggml_reshape_4d(ctx0, model.conv0_b, 1, 1, 32, 1));
         ggml_build_forward_expand(gf, cur_conv0b);
 
         //cb(cur_conv0b, "result_embd_pooled", -1);
-        PRINT_TENSOR_DIMS("cur_conv0b", cur_conv0b)
+        //PRINT_TENSOR_DIMS("cur_conv0b", cur_conv0b)
         ggml_tensor* cur_relu = ggml_relu(ctx0, cur_conv0b);
-        PRINT_TENSOR_DIMS("cur_relu", cur_relu)
+        //PRINT_TENSOR_DIMS("cur_relu", cur_relu)
         ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, model.conv3, cur_relu, 1, 1, 0, 3, 1, 1);
-        PRINT_TENSOR_DIMS("cur_conv3", cur_conv3)
+        //PRINT_TENSOR_DIMS("cur_conv3", cur_conv3)
         ggml_tensor* cur_conv3b = ggml_add(ctx0, cur_conv3, ggml_reshape_4d(ctx0, model.conv3_b, 1, 1, 20, 1));
-        PRINT_TENSOR_DIMS("cur_conv3b", cur_conv3b)
+        //PRINT_TENSOR_DIMS("cur_conv3b", cur_conv3b)
         ggml_build_forward_expand(gf, cur_conv3b);
         cb(cur_conv3b, "result_embd_pooled", -1);
 

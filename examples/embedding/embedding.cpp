@@ -9,32 +9,21 @@
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
 
-static std::vector<std::string> split_lines(const std::string & s, const std::string & separator = "\n") {
-    std::vector<std::string> lines;
-    size_t start = 0;
-    size_t end = s.find(separator);
+// static std::vector<std::string> split_lines(const std::string & s, const std::string & separator = "\n") {
+//     std::vector<std::string> lines;
+//     size_t start = 0;
+//     size_t end = s.find(separator);
 
-    while (end != std::string::npos) {
-        lines.push_back(s.substr(start, end - start));
-        start = end + separator.length();
-        end = s.find(separator, start);
-    }
+//     while (end != std::string::npos) {
+//         lines.push_back(s.substr(start, end - start));
+//         start = end + separator.length();
+//         end = s.find(separator, start);
+//     }
 
-    lines.push_back(s.substr(start)); // Add the last part
+//     lines.push_back(s.substr(start)); // Add the last part
 
-    return lines;
-}
-
-// Function to format a sequence for <AA2fold> with preallocated memory
-void format_sequence(const std::string &sequence, std::string &output) {
-    output = "<AA2fold>";
-    output.reserve(sequence.length() * 2 + 10); // Preallocate memory
-    for (size_t i = 0; i < sequence.length(); ++i) {
-        output += " ";
-        output += sequence[i];
-    }
-}
-
+//     return lines;
+// }
 
 char number_to_char(unsigned int n) {
     switch(n) {
@@ -119,8 +108,7 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
         return 1;
     }
     // Log the embeddings (assuming n_embd is the embedding size per token)
-    
-    LOG_INF("%s: n_tokens = %zu, n_seq = %d\n", __func__, enc_input.size(), 1);
+    // LOG_INF("%s: n_tokens = %zu, n_seq = %d\n", __func__, enc_input.size(), 1);
     float* embeddings = llama_get_embeddings(ctx);
     if (embeddings == nullptr) {
         LOG_ERR("%s : failed to retrieve embeddings\n", __func__);
@@ -141,7 +129,7 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
     for (int i = 0; i < seq_len; ++i) {
         result.push_back(number_to_char(arg_max_idx[i]));
     }
-    printf("\n");
+    // printf("\n");
     delete [] arg_max_idx;
     delete [] arg_max;
     return 0;
@@ -159,6 +147,7 @@ int main(int argc, char ** argv) {
 
     // For non-causal models, batch size must be equal to ubatch size
     params.n_ubatch = params.n_batch;
+    params.warmup = false;
     llama_backend_init();
     llama_numa_init(params.numa);
 
@@ -172,20 +161,20 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const int n_ctx_train = llama_n_ctx_train(model);
-    const int n_ctx = llama_n_ctx(ctx);
+    // const int n_ctx_train = llama_n_ctx_train(model);
+    // const int n_ctx = llama_n_ctx(ctx);
 
-    const enum llama_pooling_type pooling_type = llama_pooling_type(ctx);
+    // const enum llama_pooling_type pooling_type = llama_pooling_type(ctx);
 
     //if (llama_model_has_encoder(model) && llama_model_has_decoder(model)) {
     //    LOG_ERR("%s: computing embeddings in encoder-decoder models is not supported\n", __func__);
     //    return 1;
     //}
 
-    if (n_ctx > n_ctx_train) {
-        LOG_WRN("%s: warning: model was trained on only %d context tokens (%d specified)\n",
-                __func__, n_ctx_train, n_ctx);
-    }
+    // if (n_ctx > n_ctx_train) {
+    //     LOG_WRN("%s: warning: model was trained on only %d context tokens (%d specified)\n",
+    //             __func__, n_ctx_train, n_ctx);
+    // }
 
     // print system information
     {
@@ -193,73 +182,89 @@ int main(int argc, char ** argv) {
         LOG_INF("%s\n", common_params_get_system_info(params).c_str());
     }
 
-    // split the prompt into lines
-    std::vector<std::string> prompts = split_lines(params.prompt, params.embd_sep);
+    // // split the prompt into lines
+    // std::vector<std::string> prompts = split_lines(params.prompt, params.embd_sep);
 
-    // max batch size
-    const uint64_t n_batch = params.n_batch;
-    //GGML_ASSERT(params.n_batch >= params.n_ctx);
+    // // max batch size
+    // const uint64_t n_batch = params.n_batch;
+    // //GGML_ASSERT(params.n_batch >= params.n_ctx);
 
-    // tokenize the prompts and trim
-    std::vector<std::vector<int32_t>> inputs;
-    for (const auto & prompt : prompts) {
-        auto inp = common_tokenize(ctx, prompt, true, true);
-        if (inp.size() > n_batch) {
-            LOG_ERR("%s: number of tokens in input line (%lld) exceeds batch size (%lld), increase batch size and re-run\n",
-                    __func__, (long long int) inp.size(), (long long int) n_batch);
-            return 1;
-        }
-        inputs.push_back(inp);
-    }
-    // check if the last token is SEP
-    // it should be automatically added by the tokenizer when 'tokenizer.ggml.add_eos_token' is set to 'true'
-    for (auto & inp : inputs) {
-        if (inp.empty() || inp.back() != llama_token_sep(model)) {
-            LOG_WRN("%s: last token in the prompt is not SEP\n", __func__);
-            LOG_WRN("%s: 'tokenizer.ggml.add_eos_token' should be set to 'true' in the GGUF header\n", __func__);
-        }
-    }
+    // // tokenize the prompts and trim
+    // std::vector<std::vector<int32_t>> inputs;
+    // for (const auto & prompt : prompts) {
+    //     auto inp = common_tokenize(ctx, prompt, true, true);
+    //     if (inp.size() > n_batch) {
+    //         LOG_ERR("%s: number of tokens in input line (%lld) exceeds batch size (%lld), increase batch size and re-run\n",
+    //                 __func__, (long long int) inp.size(), (long long int) n_batch);
+    //         return 1;
+    //     }
+    //     inputs.push_back(inp);
+    // }
+    // // check if the last token is SEP
+    // // it should be automatically added by the tokenizer when 'tokenizer.ggml.add_eos_token' is set to 'true'
+    // for (auto & inp : inputs) {
+    //     if (inp.empty() || inp.back() != llama_token_sep(model)) {
+    //         LOG_WRN("%s: last token in the prompt is not SEP\n", __func__);
+    //         LOG_WRN("%s: 'tokenizer.ggml.add_eos_token' should be set to 'true' in the GGUF header\n", __func__);
+    //     }
+    // }
 
-    // tokenization stats
-    if (params.verbose_prompt) {
-        for (int i = 0; i < (int) inputs.size(); i++) {
-            LOG_INF("%s: prompt %d: '%s'\n", __func__, i, prompts[i].c_str());
-            LOG_INF("%s: number of tokens in prompt = %zu\n", __func__, inputs[i].size());
-            for (int j = 0; j < (int) inputs[i].size(); j++) {
-                LOG("%6d -> '%s'\n", inputs[i][j], common_token_to_piece(ctx, inputs[i][j]).c_str());
-            }
-            LOG("\n\n");
-        }
-    }
+    // // tokenization stats
+    // if (params.verbose_prompt) {
+    //     for (int i = 0; i < (int) inputs.size(); i++) {
+    //         LOG_INF("%s: prompt %d: '%s'\n", __func__, i, prompts[i].c_str());
+    //         LOG_INF("%s: number of tokens in prompt = %zu\n", __func__, inputs[i].size());
+    //         for (int j = 0; j < (int) inputs[i].size(); j++) {
+    //             LOG("%6d -> '%s'\n", inputs[i][j], common_token_to_piece(ctx, inputs[i][j]).c_str());
+    //         }
+    //         LOG("\n\n");
+    //     }
+    // }
 
-    // initialize batch
-    const int n_prompts = prompts.size();
+    // // initialize batch
+    // const int n_prompts = prompts.size();
 
-    // count number of embeddings
-    int n_embd_count = 0;
-    if (pooling_type == LLAMA_POOLING_TYPE_NONE) {
-        for (int k = 0; k < n_prompts; k++) {
-            n_embd_count += inputs[k].size();
-        }
-    } else {
-        n_embd_count = n_prompts;
-    }
+    // // count number of embeddings
+    // int n_embd_count = 0;
+    // if (pooling_type == LLAMA_POOLING_TYPE_NONE) {
+    //     for (int k = 0; k < n_prompts; k++) {
+    //         n_embd_count += inputs[k].size();
+    //     }
+    // } else {
+    //     n_embd_count = n_prompts;
+    // }
 
     // allocate output
-    const int n_embd = llama_n_embd(model);
-    std::vector<float> embeddings(n_embd_count * n_embd, 0);
+    // const int n_embd = llama_n_embd(model);
+    // std::vector<float> embeddings(n_embd_count * n_embd, 0);
     std::string result;
     std::vector<std::pair<std::string, std::string>> fastaData = read_fasta("test2.fasta");
-    std::string prompt;
+    // std::string prompt;
     for (const auto &entry : fastaData) {
         const std::string &sequence = entry.second; 
-        prompt.clear();
+        // prompt.clear();
         result.clear();
         if(sequence.size() > 1024)
             continue;
         printf("AA:  %s\n", sequence.c_str());
-        format_sequence(sequence, prompt);
-        std::vector<llama_token> embd_inp = common_tokenize(ctx, prompt, true, true);
+        // format_sequence(sequence, prompt);
+
+        std::vector<llama_token> embd_inp;
+        embd_inp.reserve(sequence.length() + 1);
+        embd_inp.emplace_back(llama_token_get_token(model, "<AA2fold>"));
+        llama_token unk_aa = llama_token_get_token(model, "x");
+        for (size_t i = 0; i < sequence.length(); ++i) {
+            std::string current_char(1, sequence[i] | 0x20);
+            llama_token token = llama_token_get_token(model, current_char.c_str());
+            if (token == LLAMA_TOKEN_NULL) {
+                embd_inp.emplace_back(unk_aa);
+            } else {
+                embd_inp.emplace_back(token);
+            }
+        }
+        embd_inp.emplace_back(llama_token_get_token(model, "</s>"));
+
+        // std::vector<llama_token> embd_inp = common_tokenize(ctx, prompt, true, true);
         encode(ctx, embd_inp, result);
         printf("3Di: %s\n", result.c_str());
     }

@@ -99,6 +99,7 @@ std::vector<llama_vocab::id> llama_tokenize_internal(
 llama_token llama_byte_to_token_impl(const llama_vocab & vocab, uint8_t ch);
 
 const char * llama_token_get_text_impl(const struct llama_vocab & vocab, llama_token token);
+llama_token llama_token_get_token_impl(const struct llama_vocab & vocab, const char* text);
 
 float llama_token_get_score_impl(const struct llama_vocab & vocab, llama_token token);
 

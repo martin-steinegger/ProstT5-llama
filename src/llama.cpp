@@ -9396,7 +9396,6 @@ static bool llm_load_tensors(
                         layer.ffn_down_enc = create_tensor(tn(LLM_TENSOR_ENC_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up_enc   = create_tensor(tn(LLM_TENSOR_ENC_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
-                    std::cout << "loading t5 conv" << std::endl;
                     model.conv0 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 0), {1, 7, 1024, 32}, 0); // kw, kh, ic, oc 
                     model.conv0_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 0), {32}, 0); // oc
                     model.conv3 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 3), {1,     7,    32,    20}, 0);

@@ -885,6 +885,7 @@ extern "C" {
     //
 
     LLAMA_API const char * llama_token_get_text(const struct llama_model * model, llama_token token);
+    LLAMA_API llama_token llama_token_get_token(const struct llama_model * model, const char * text);
 
     LLAMA_API float llama_token_get_score(const struct llama_model * model, llama_token token);
 

@@ -22844,6 +22844,10 @@ const char * llama_token_get_text(const struct llama_model * model, llama_token 
     return llama_token_get_text_impl(model->vocab, token);
 }
 
+llama_token llama_token_get_token(const struct llama_model * model, const char* text) {
+    return llama_token_get_token_impl(model->vocab, text);
+}
+
 float llama_token_get_score(const struct llama_model * model, llama_token token) {
     return llama_token_get_score_impl(model->vocab, token);
 }

@@ -135,19 +135,54 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
     return 0;
 }
 
+
+static std::vector<ggml_backend_dev_t> parse_device_list(const std::string & value) {
+    std::vector<ggml_backend_dev_t> devices;
+    auto dev_names = string_split<std::string>(value, ',');
+    if (dev_names.empty()) {
+        throw std::invalid_argument("no devices specified");
+    }
+    if (dev_names.size() == 1 && dev_names[0] == "none") {
+        devices.push_back(nullptr);
+    } else {
+        for (const auto & device : dev_names) {
+            auto * dev = ggml_backend_dev_by_name(device.c_str());
+            if (!dev || ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_GPU) {
+                throw std::invalid_argument(string_format("invalid device: %s", device.c_str()));
+            }
+            devices.push_back(dev);
+        }
+        devices.push_back(nullptr);
+    }
+    return devices;
+}
+
 int main(int argc, char ** argv) {
     common_params params;
 
-    //if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_EMBEDDING)) {
-    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN)) {
-        return 1;
-    }
+    const char* model_file = argv[1];
+    const char* fasta_file = argv[2];
 
+    //if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_EMBEDDING)) {
+    // if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN)) {
+    //     return 1;
+    // }
+    common_params_parser_init(params, LLAMA_EXAMPLE_EMBEDDING);
+    // const common_params params_org = ctx_arg.params; // the example can modify the default params
+
+    common_log_set_verbosity_thold(-1);
     common_init();
 
     // For non-causal models, batch size must be equal to ubatch size
     params.n_ubatch = params.n_batch;
     params.warmup = false;
+    params.model = model_file;
+    params.cpuparams.n_threads = 1;
+    params.use_mmap = false;
+    params.devices = parse_device_list("none");
+    // if (params.cpuparams.n_threads <= 0) {
+    //     params.cpuparams.n_threads = std::thread::hardware_concurrency();
+    // }
     llama_backend_init();
     llama_numa_init(params.numa);
 
@@ -238,7 +273,7 @@ int main(int argc, char ** argv) {
     // const int n_embd = llama_n_embd(model);
     // std::vector<float> embeddings(n_embd_count * n_embd, 0);
     std::string result;
-    std::vector<std::pair<std::string, std::string>> fastaData = read_fasta("test2.fasta");
+    std::vector<std::pair<std::string, std::string>> fastaData = read_fasta(fasta_file);
     // std::string prompt;
     for (const auto &entry : fastaData) {
         const std::string &sequence = entry.second; 
@@ -250,7 +285,7 @@ int main(int argc, char ** argv) {
         // format_sequence(sequence, prompt);
 
         std::vector<llama_token> embd_inp;
-        embd_inp.reserve(sequence.length() + 1);
+        embd_inp.reserve(sequence.length() + 2);
         embd_inp.emplace_back(llama_token_get_token(model, "<AA2fold>"));
         llama_token unk_aa = llama_token_get_token(model, "x");
         for (size_t i = 0; i < sequence.length(); ++i) {

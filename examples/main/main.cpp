@@ -91,6 +91,33 @@ static std::string chat_add_and_format(struct llama_model * model, std::vector<c
     return formatted;
 }
 
+
+char number_to_char(unsigned int n) {
+    switch(n) {
+        case 0:  return 'A';
+        case 1:  return 'C';
+        case 2:  return 'D';
+        case 3:  return 'E';
+        case 4:  return 'F';
+        case 5:  return 'G';
+        case 6:  return 'H';
+        case 7:  return 'I';
+        case 8:  return 'K';
+        case 9:  return 'L';
+        case 10: return 'M';
+        case 11: return 'N';
+        case 12: return 'P';
+        case 13: return 'Q';
+        case 14: return 'R';
+        case 15: return 'S';
+        case 16: return 'T';
+        case 17: return 'V';
+        case 18: return 'W';
+        case 19: return 'Y';
+        default: return 'X'; // Default case for numbers not in the list
+    }
+}
+
 int main(int argc, char ** argv) {
     common_params params;
     g_params = &params;
@@ -505,17 +532,28 @@ int main(int argc, char ** argv) {
 
     // Log the embeddings (assuming n_embd is the embedding size per token)
     int n_embd = llama_n_embd(model);
-    LOG_INF("Encoder embeddings:\n");
-    LOG_INF("n_embd = %d\n", n_embd);
+    //LOG_INF("Encoder embeddings:\n");
+    //LOG_INF("n_embd = %d\n", n_embd);
     //LOG_INF("embeddings[0]=%f embeddings[500]=%f\n", embeddings[0], embeddings[534]);
-    for (int i = 0; i < enc_input_size; ++i) {
-        LOG_INF("Token %d:", i);
-        float * embedpos = llama_get_embeddings_ith(ctx, i);
-        for (int j = 0; j < n_embd; ++j) {
-            printf("%.6f ", embedpos[j]);
+    int * arg_max_idx = (int *) malloc(enc_input_size * sizeof(int));
+    float * arg_max = (float *) malloc(enc_input_size * sizeof(float));
+    std::fill(arg_max, arg_max + enc_input_size, std::numeric_limits<float>::min());
+    int seq_len = enc_input_size - 1;
+    for (int i = 0; i < 20; ++i) {
+        //LOG_INF("Token %d:", i);
+        //float * embedpos = llama_get_embeddings_ith(ctx, i);
+        for (int j = 0; j < seq_len; ++j) {
+            if(embeddings[i*seq_len + j] > arg_max[j]){
+               arg_max_idx[j] = i;
+               arg_max[j] = embeddings[i*seq_len + j];
+            }    
+            //printf("%.6f ", embeddings[i*20 + j]);
         }
-        printf("\n");
-    }         
+    }
+    for (int i = 0; i < seq_len; ++i) {    
+        printf("%c", number_to_char(arg_max_idx[i]) );
+    }
+    printf("\n");
 
  
         llama_token decoder_start_token_id = llama_model_decoder_start_token(model);

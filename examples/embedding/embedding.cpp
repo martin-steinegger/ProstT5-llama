@@ -118,7 +118,7 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
     }
     int * arg_max_idx = new int[enc_input.size()];
     float * arg_max = new float[enc_input.size()];
-    std::fill(arg_max, arg_max + enc_input.size(), std::numeric_limits<float>::min());
+    std::fill(arg_max, arg_max + enc_input.size(), std::numeric_limits<float>::lowest());
     int seq_len = enc_input.size() - 1;
     for (int i = 0; i < 20; ++i) {
         for (int j = 0; j < seq_len; ++j) {
@@ -287,14 +287,14 @@ int main(int argc, char ** argv) {
         if(sequence.size() > 1024)
             continue;
         printf("AA:  %s\n", sequence.c_str());
-        // format_sequence(sequence, prompt);
 
         std::vector<llama_token> embd_inp;
         embd_inp.reserve(sequence.length() + 2);
         embd_inp.emplace_back(llama_token_get_token(model, "<AA2fold>"));
-        llama_token unk_aa = llama_token_get_token(model, "x");
+        llama_token unk_aa = llama_token_get_token(model, "▁X");
         for (size_t i = 0; i < sequence.length(); ++i) {
-            std::string current_char(1, sequence[i] | 0x20);
+            std::string current_char("▁");
+            current_char.append(1, toupper(sequence[i]));
             llama_token token = llama_token_get_token(model, current_char.c_str());
             if (token == LLAMA_TOKEN_NULL) {
                 embd_inp.emplace_back(unk_aa);

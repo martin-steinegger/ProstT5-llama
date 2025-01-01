@@ -5,6 +5,8 @@
 #include <ctime>
 #include <iostream>
 #include <fstream>
+#include <limits>
+#include <climits>
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
@@ -158,6 +160,9 @@ static std::vector<ggml_backend_dev_t> parse_device_list(const std::string & val
 }
 
 int main(int argc, char ** argv) {
+    common_log_set_verbosity_thold(-1);
+    llama_log_set([](ggml_log_level level, const char * text, void * /*user_data*/) {
+    }, NULL);
     common_params params;
 
     const char* model_file = argv[1];
@@ -170,7 +175,6 @@ int main(int argc, char ** argv) {
     common_params_parser_init(params, LLAMA_EXAMPLE_EMBEDDING);
     // const common_params params_org = ctx_arg.params; // the example can modify the default params
 
-    common_log_set_verbosity_thold(-1);
     common_init();
 
     // For non-causal models, batch size must be equal to ubatch size
@@ -179,7 +183,8 @@ int main(int argc, char ** argv) {
     params.model = model_file;
     params.cpuparams.n_threads = 1;
     params.use_mmap = false;
-    params.devices = parse_device_list("none");
+    params.devices = parse_device_list(argv[3]);
+    //params.devices = parse_device_list("none");
     // if (params.cpuparams.n_threads <= 0) {
     //     params.cpuparams.n_threads = std::thread::hardware_concurrency();
     // }

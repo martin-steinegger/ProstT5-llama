@@ -98,7 +98,7 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
     const struct llama_model * model = llama_get_model(ctx);
 
     // clear previous kv_cache values (irrelevant for embeddings)
-    llama_kv_cache_clear(ctx);
+    // llama_kv_cache_clear(ctx);
     // llama_set_embeddings(ctx, true);
     // run model
     if (llama_model_has_encoder(model) && !llama_model_has_decoder(model)) {
@@ -128,7 +128,7 @@ static int encode(llama_context * ctx, std::vector<llama_token> & enc_input, std
             }
         }
     }
-    for (int i = 0; i < seq_len; ++i) {
+    for (int i = 0; i < seq_len - 1; ++i) {
         result.push_back(number_to_char(arg_max_idx[i]));
     }
     // printf("\n");
@@ -185,7 +185,6 @@ int main(int argc, char ** argv) {
     params.use_mmap = false;
     params.n_gpu_layers = 24;
     params.devices = parse_device_list(argv[3]);
-    params.check_tensors = true;
     params.embedding = true;
     //params.devices = parse_device_list("none");
     // if (params.cpuparams.n_threads <= 0) {

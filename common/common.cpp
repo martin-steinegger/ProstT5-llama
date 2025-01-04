@@ -885,11 +885,13 @@ struct common_init_result common_init_from_params(common_params & params) {
         return iparams;
     }
 
+#if 0
     if (params.ctx_shift && !llama_kv_cache_can_shift(lctx)) {
         LOG_ERR("%s: KV cache shifting is not supported for this model (--no-context-shift to disable)'\n", __func__);
         llama_free_model(model);
         return iparams;
     }
+#endif
 
     if (!params.control_vectors.empty()) {
         if (params.control_vector_layer_start <= 0) params.control_vector_layer_start = 1;
@@ -985,10 +987,12 @@ struct common_init_result common_init_from_params(common_params & params) {
             tmp.clear();
             tmp.push_back(decoder_start_token_id);
         }
+#if 0
         if (llama_model_has_decoder(model)) {
             llama_decode(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch)));
         }
         llama_kv_cache_clear(lctx);
+#endif
         llama_synchronize(lctx);
         llama_perf_context_reset(lctx);
     }

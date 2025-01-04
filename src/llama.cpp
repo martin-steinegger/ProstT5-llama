@@ -9410,9 +9410,9 @@ static bool llm_load_tensors(
                         layer.ffn_down_enc = create_tensor(tn(LLM_TENSOR_ENC_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up_enc   = create_tensor(tn(LLM_TENSOR_ENC_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
-                    model.conv0 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 0), {1, 7, 1024, 32}, 0);
+                    model.conv0 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 0), {7, 1, 1024, 32}, 0);
                     model.conv0_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 0), {32}, 0);
-                    model.conv3 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 3), {1, 7,   32, 20}, 0);
+                    model.conv3 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 3), {7, 1,   32, 20}, 0);
                     model.conv3_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 3), {20}, 0);
                 } break;
 #if 0
@@ -11271,10 +11271,11 @@ struct llm_build_context {
         cb(permuted_tensor, "permuted_tensor", -1);
         // PRINT_TENSOR_DIMS("permuted_tensor", permuted_tensor)
 
-        ggml_tensor* cw0 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv0,  1, 0, 2, 3));
-        cb(cw0, "cw0", -1);
+        // ggml_tensor* cw0 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv0,  1, 0, 2, 3));
+        // cb(cw0, "cw0", -1);
 
-        ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, cw0, permuted_tensor, 1, 1, 3, 0, 1, 1);
+        // ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, cw0, permuted_tensor, 1, 1, 3, 0, 1, 1);
+        ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, model.conv0, permuted_tensor, 1, 1, 3, 0, 1, 1);
         cb(cur_conv0, "cur_conv0", -1);
         // ggml_build_forward_expand(gf, cur_conv0);
         // ggml_graph_print(gf);
@@ -11291,11 +11292,12 @@ struct llm_build_context {
         ggml_tensor* cur_relu = ggml_relu(ctx0, cur_conv0b);
         cb(cur_relu, "cur_relu", -1);
 
-        ggml_tensor* cw3 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv3,  1, 0, 2, 3));
-        cb(cw3, "cw3", -1);
+        // ggml_tensor* cw3 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv3, 1, 0, 2, 3));
+        // cb(cw3, "cw3", -1);
 
         //PRINT_TENSOR_DIMS("cur_relu", cur_relu)
-        ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, cw3, cur_relu, 1, 1, 3, 0, 1, 1);
+        // ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, cw3, cur_relu, 1, 1, 3, 0, 1, 1);
+        ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, model.conv3, cur_relu, 1, 1, 3, 0, 1, 1);
         cb(cur_conv3, "cur_conv3", -1);
 
         //PRINT_TENSOR_DIMS("cur_conv3", cur_conv3)

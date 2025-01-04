@@ -4197,6 +4197,8 @@ class T5EncoderModel(Model):
         if "decoder" in name:
             return []
         if "classifier" in name:
+            if "weight" in name:
+                return [(name, data_torch.permute(0, 1, 3, 2))]
             return [(name, data_torch)]
         return [(self.map_tensor_name(name), data_torch)]
 

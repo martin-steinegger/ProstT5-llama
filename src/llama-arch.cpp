@@ -5,6 +5,7 @@
 #include <map>
 
 static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
+#if 0
     { LLM_ARCH_LLAMA,            "llama"            },
     { LLM_ARCH_DECI,             "deci"             },
     { LLM_ARCH_FALCON,           "falcon"           },
@@ -52,7 +53,9 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
     { LLM_ARCH_CHATGLM,          "chatglm"          },
     { LLM_ARCH_BITNET,           "bitnet"           },
     { LLM_ARCH_T5,               "t5"               },
+#endif
     { LLM_ARCH_T5ENCODER,        "t5encoder"        },
+#if 0
     { LLM_ARCH_JAIS,             "jais"             },
     { LLM_ARCH_NEMOTRON,         "nemotron"         },
     { LLM_ARCH_EXAONE,           "exaone"           },
@@ -62,6 +65,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
     { LLM_ARCH_GRANITE_MOE,      "granitemoe"       },
     { LLM_ARCH_CHAMELEON,        "chameleon"        },
     { LLM_ARCH_WAVTOKENIZER_DEC, "wavtokenizer-dec" },
+#endif
     { LLM_ARCH_UNKNOWN,          "(unknown)"        },
 };
 
@@ -195,6 +199,7 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
 };
 
 static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_NAMES = {
+#if 0
     {
         LLM_ARCH_LLAMA,
         {
@@ -1081,6 +1086,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ENC_FFN_UP,           "enc.blk.%d.ffn_up" },
         },
     },
+#endif
     {
         LLM_ARCH_T5ENCODER,
         {
@@ -1100,6 +1106,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_CONV1D,               "classifier.%d" },
         },
     },
+#if 0
     {
         LLM_ARCH_JAIS,
         {
@@ -1292,6 +1299,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_POS_NET_ATTN_OUT,  "posnet.%d.attn_output" },
         },
     },
+#endif
     {
         LLM_ARCH_UNKNOWN,
         {

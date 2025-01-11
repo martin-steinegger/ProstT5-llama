@@ -794,6 +794,7 @@ float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id
     return it->second.data();
 }
 
+#if 0
 // llama state API
 
 // deprecated
@@ -1763,6 +1764,7 @@ size_t llama_state_seq_load_file(struct llama_context * ctx, const char * filepa
         return 0;
     }
 }
+#endif
 
 const std::vector<std::pair<std::string, struct ggml_tensor *>> & llama_internal_get_tensor_map(
     struct llama_context * ctx

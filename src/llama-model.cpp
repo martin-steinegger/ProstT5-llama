@@ -291,6 +291,7 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
     ml.get_key(LLM_KV_EXPERT_COUNT,      hparams.n_expert,      false);
     ml.get_key(LLM_KV_EXPERT_USED_COUNT, hparams.n_expert_used, false);
 
+#if 0
     if (model.arch == LLM_ARCH_WAVTOKENIZER_DEC) {
         ml.get_key(LLM_KV_FEATURES_LENGTH, hparams.n_embd_features);
 
@@ -300,6 +301,7 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
         ml.get_key(LLM_KV_CONVNEXT_EMBEDDING_LENGTH, hparams.convnext.n_embd);
         ml.get_key(LLM_KV_CONVNEXT_BLOCK_COUNT,      hparams.convnext.n_layer);
     }
+#endif
 
     GGML_ASSERT(hparams.n_expert <= LLAMA_MAX_EXPERTS);
     GGML_ASSERT(hparams.n_expert_used <= hparams.n_expert);
@@ -364,11 +366,13 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
 
         ml.get_key(LLM_KV_ROPE_DIMENSION_COUNT, hparams.n_rot, false);
 
+#if 0
         if (model.arch == LLM_ARCH_LLAMA || model.arch == LLM_ARCH_DECI || model.arch == LLM_ARCH_FALCON) {
             if (hparams.n_rot != hparams.n_embd_head_k) {
                 throw std::runtime_error(format("invalid n_rot: %u, expected %u", hparams.n_rot, hparams.n_embd_head_k));
             }
         }
+#endif
     } else {
         hparams.n_rot = 0;
         hparams.n_embd_head_k = 0;
@@ -379,6 +383,7 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
 
     // arch-specific KVs
     switch (model.arch) {
+#if 0
         case LLM_ARCH_LLAMA:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
@@ -1018,12 +1023,14 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
                     default: model.type = e_model::MODEL_UNKNOWN;
                }
             } break;
+#endif
         case LLM_ARCH_T5ENCODER:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
                 ml.get_key(LLM_KV_ATTENTION_RELATIVE_BUCKETS_COUNT, hparams.n_rel_attn_bkts);
                 model.type = e_model::MODEL_UNKNOWN;
             } break;
+#if 0
         case LLM_ARCH_JAIS:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_EPS, hparams.f_norm_eps);
@@ -1112,6 +1119,7 @@ void llm_load_hparams(llama_model_loader & ml, llama_model & model) {
                 ml.get_key(LLM_KV_ATTENTION_GROUPNORM_GROUPS, hparams.n_norm_groups);
                 ml.get_key(LLM_KV_ATTENTION_CAUSAL,           hparams.causal_attn);
             } break;
+#endif
         default: throw std::runtime_error("unsupported model architecture");
     }
 
@@ -1962,6 +1970,7 @@ void llm_load_print_meta(llama_model_loader & ml, llama_model & model) {
 
     LLAMA_LOG_INFO("%s: max token length = %d\n", __func__, vocab.max_token_len);
 
+#if 0
     if (model.arch == LLM_ARCH_DEEPSEEK) {
         LLAMA_LOG_INFO("%s: n_layer_dense_lead   = %d\n",     __func__, hparams.n_layer_dense_lead);
         LLAMA_LOG_INFO("%s: n_ff_exp             = %d\n",     __func__, hparams.n_ff_exp);
@@ -1991,6 +2000,7 @@ void llm_load_print_meta(llama_model_loader & ml, llama_model & model) {
         LLAMA_LOG_INFO("%s: f_residual_scale  = %f\n", __func__, hparams.f_residual_scale);
         LLAMA_LOG_INFO("%s: f_attention_scale = %f\n", __func__, hparams.f_attention_scale);
     }
+#endif
 }
 
 //
@@ -2057,6 +2067,7 @@ int32_t llama_n_head(const struct llama_model * model) {
 enum llama_rope_type llama_rope_type(const struct llama_model * model) {
     switch (model->arch) {
         // these models do not use RoPE
+#if 0
         case LLM_ARCH_GPT2:
         case LLM_ARCH_GPTJ:
         case LLM_ARCH_MPT:
@@ -2065,13 +2076,17 @@ enum llama_rope_type llama_rope_type(const struct llama_model * model) {
         case LLM_ARCH_MAMBA:
         case LLM_ARCH_JINA_BERT_V2:
         case LLM_ARCH_T5:
+#endif
         case LLM_ARCH_T5ENCODER:
+#if 0
         case LLM_ARCH_JAIS:
         case LLM_ARCH_RWKV6:
         case LLM_ARCH_RWKV6QWEN2:
         case LLM_ARCH_WAVTOKENIZER_DEC:
+#endif
             return LLAMA_ROPE_TYPE_NONE;
 
+#if 0
         // use what we call a normal RoPE, operating on pairs of consecutive head values
         case LLM_ARCH_LLAMA:
         case LLM_ARCH_DECI:
@@ -2123,6 +2138,7 @@ enum llama_rope_type llama_rope_type(const struct llama_model * model) {
 
         case LLM_ARCH_QWEN2VL:
             return LLAMA_ROPE_TYPE_MROPE;
+#endif
 
         // all model arches should be listed explicitly here
         case LLM_ARCH_UNKNOWN:
@@ -2191,18 +2207,28 @@ uint64_t llama_model_n_params(const struct llama_model * model) {
 }
 
 bool llama_model_has_encoder(const struct llama_model * model) {
+#if 0
     switch (model->arch) {
         case LLM_ARCH_T5:        return true;
         case LLM_ARCH_T5ENCODER: return true;
         default:                 return false;
     }
+#else
+    return true;
+    GGML_UNUSED(model);
+#endif
 }
 
 bool llama_model_has_decoder(const struct llama_model * model) {
+#if 0
     switch (model->arch) {
         case LLM_ARCH_T5ENCODER: return false;
         default:                 return true;
     }
+#else
+    return false;
+    GGML_UNUSED(model);
+#endif
 }
 
 llama_token llama_model_decoder_start_token(const struct llama_model * model) {
@@ -2210,10 +2236,15 @@ llama_token llama_model_decoder_start_token(const struct llama_model * model) {
 }
 
 bool llama_model_is_recurrent(const struct llama_model * model) {
+#if 0
     switch (model->arch) {
         case LLM_ARCH_MAMBA:  return true;
         case LLM_ARCH_RWKV6:  return true;
         case LLM_ARCH_RWKV6QWEN2: return true;
         default:              return false;
     }
+#else
+    return false;
+    GGML_UNUSED(model);
+#endif
 }

@@ -389,6 +389,7 @@ ggml_backend_t ggml_backend_init_best(void) {
     return ggml_backend_dev_init(dev, nullptr);
 }
 
+#if 0
 // Dynamic loading
 ggml_backend_reg_t ggml_backend_load(const char * path) {
     return get_reg().load_backend(utf8_to_utf16(path), false);
@@ -580,3 +581,4 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
         ggml_backend_load(backend_path);
     }
 }
+#endif

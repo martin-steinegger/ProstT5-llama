@@ -9,6 +9,7 @@
 //
 
 enum llm_arch {
+#if 0
     LLM_ARCH_LLAMA,
     LLM_ARCH_DECI,
     LLM_ARCH_FALCON,
@@ -56,7 +57,9 @@ enum llm_arch {
     LLM_ARCH_CHATGLM,
     LLM_ARCH_BITNET,
     LLM_ARCH_T5,
+#endif
     LLM_ARCH_T5ENCODER,
+#if 0
     LLM_ARCH_JAIS,
     LLM_ARCH_NEMOTRON,
     LLM_ARCH_EXAONE,
@@ -66,6 +69,7 @@ enum llm_arch {
     LLM_ARCH_GRANITE_MOE,
     LLM_ARCH_CHAMELEON,
     LLM_ARCH_WAVTOKENIZER_DEC,
+#endif
     LLM_ARCH_UNKNOWN,
 };
 

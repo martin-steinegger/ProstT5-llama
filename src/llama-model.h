@@ -317,6 +317,12 @@ struct llama_model {
     struct ggml_tensor * conv1d   = nullptr;
     struct ggml_tensor * conv1d_b = nullptr;
 
+    // prostt5
+    struct ggml_tensor * conv0   = nullptr;
+    struct ggml_tensor * conv0_b = nullptr;
+    struct ggml_tensor * conv3   = nullptr;
+    struct ggml_tensor * conv3_b = nullptr;
+
     std::vector<llama_layer> layers;
 
     // gguf metadata

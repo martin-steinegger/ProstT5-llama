@@ -1631,6 +1631,15 @@ const char * llama_token_get_text_impl(const struct llama_vocab & vocab, llama_t
     return vocab.id_to_token[token].text.c_str();
 }
 
+llama_token llama_token_get_token_impl(const struct llama_vocab & vocab, const char* text) {
+    GGML_ASSERT(vocab.type != LLAMA_VOCAB_TYPE_NONE);
+    const auto& it = vocab.token_to_id.find(text);
+    if (it == vocab.token_to_id.end()) {
+        return LLAMA_TOKEN_NULL;
+    }
+    return it->second;
+}
+
 float llama_token_get_score_impl(const struct llama_vocab & vocab, llama_token token) {
     GGML_ASSERT(vocab.type != LLAMA_VOCAB_TYPE_NONE);
     return vocab.id_to_token[token].score;

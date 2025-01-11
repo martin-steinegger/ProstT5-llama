@@ -1097,6 +1097,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ENC_FFN_GATE,         "enc.blk.%d.ffn_gate" },
             { LLM_TENSOR_ENC_FFN_DOWN,         "enc.blk.%d.ffn_down" },
             { LLM_TENSOR_ENC_FFN_UP,           "enc.blk.%d.ffn_up" },
+            { LLM_TENSOR_CONV1D,               "classifier.%d" },
         },
     },
     {
@@ -1424,7 +1425,7 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
     {LLM_TENSOR_FFN_EXP_PROBS_B,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_ADD}},
     // this tensor is loaded for T5, but never used
     {LLM_TENSOR_DEC_CROSS_ATTN_REL_B,       {LLM_TENSOR_LAYER_REPEATING, GGML_OP_NONE}},
-    {LLM_TENSOR_CONV1D,                     {LLM_TENSOR_LAYER_INPUT,     GGML_OP_IM2COL}},
+    {LLM_TENSOR_CONV1D,                     {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_IM2COL}},
     {LLM_TENSOR_POS_NET_NORM,               {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL}},
     {LLM_TENSOR_POS_NET_NORM1,              {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL}},
     {LLM_TENSOR_POS_NET_NORM2,              {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL}},

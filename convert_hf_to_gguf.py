@@ -4086,7 +4086,7 @@ class DeepseekV2Model(Model):
 
 
 @Model.register("T5WithLMHeadModel")
-@Model.register("T5ForConditionalGeneration")
+#@Model.register("T5ForConditionalGeneration")
 @Model.register("MT5ForConditionalGeneration")
 @Model.register("UMT5ForConditionalGeneration")
 class T5Model(Model):
@@ -4229,6 +4229,7 @@ class T5Model(Model):
 
 
 @Model.register("T5EncoderModel")
+@Model.register("T5ForConditionalGeneration")
 class T5EncoderModel(Model):
     model_arch = gguf.MODEL_ARCH.T5ENCODER
 
@@ -4260,8 +4261,8 @@ class T5EncoderModel(Model):
             # assure the tokenizer model file name is correct
             assert tokenizer_path.name == 'tokenizer.model'
             return self._set_vocab_sentencepiece()
-        else:
-            assert sentencepiece_model.trainer_spec.model_type == 1  # UNIGRAM
+        #else:
+        #    assert sentencepiece_model.trainer_spec.model_type == 1  # UNIGRAM
 
         add_prefix = sentencepiece_model.normalizer_spec.add_dummy_prefix
         remove_whitespaces = sentencepiece_model.normalizer_spec.remove_extra_whitespaces
@@ -4356,15 +4357,26 @@ class T5EncoderModel(Model):
         # "decoder.embed_tokens.weight" or "shared.weight" tensor. In some models there are even multiple of them stored
         # in the safetensors files. We use the first tensor from these three as the token embeddings for both encoder
         # and decoder and ignore the remaining ones.
-        if name in ["decoder.embed_tokens.weight", "encoder.embed_tokens.weight", "shared.weight"]:
+        if name in ["decoder.embed_tokens.weight", "encoder.embed_tokens.weight", "shared.weight", "embed_tokens.weight"]:
             if not self.shared_token_embeddings_found:
                 name = "shared.weight"
                 self.shared_token_embeddings_found = True
             else:
                 logger.debug(f"Skipping shared tensor {name!r} in safetensors so that convert can end normally.")
                 return []
-
+        if "decoder" in name:
+            return []
+        if "classifier" in name:
+            if "weight" in name:
+                return [(name, data_torch.permute(0, 1, 3, 2))]
+            return [(name, data_torch)]
         return [(self.map_tensor_name(name), data_torch)]
+
+    def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        device = torch.device('cpu')
+        state = torch.load("model.pt", map_location=device)
+        for name in state["state_dict"]:
+            yield (name, state["state_dict"][name])
 
 
 @Model.register("JAISLMHeadModel")

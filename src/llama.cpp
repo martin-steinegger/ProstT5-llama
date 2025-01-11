@@ -2032,6 +2032,10 @@ static bool llm_load_tensors(
                         layer.ffn_down_enc = create_tensor(tn(LLM_TENSOR_ENC_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up_enc   = create_tensor(tn(LLM_TENSOR_ENC_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
+                    model.conv0 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 0), {7, 1, 1024, 32}, 0);
+                    model.conv0_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 0), {32}, 0);
+                    model.conv3 = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", 3), {7, 1,   32, 20}, 0);
+                    model.conv3_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias", 3), {20}, 0);
                 } break;
             case LLM_ARCH_JAIS:
                 {
@@ -3940,9 +3944,72 @@ struct llm_build_context {
                 }
         }
 
-        cb(cur, "result_embd_pooled", -1);
+        cb(cur, "result_embd_pooled_plm", -1);
 
         ggml_build_forward_expand(gf, cur);
+
+#if 1
+        // ggml_graph_print(gf);
+        // #define PRINT_TENSOR_DIMS(name, tensor) std::cout << name << " " << (tensor)->ne[0] << "\t" << (tensor)->ne[1] << "\t" << (tensor)->ne[2] << "\t" << (tensor)->ne[3] << std::endl;
+
+        // 1) Slicing: skip first row in dim1
+        size_t offset_bytes = cur->nb[1] * 1ULL;  // skip one row in the dim1 direction
+        ggml_tensor * cur_sliced = ggml_view_3d(
+            ctx0,
+            cur,
+            /* ne0   */ cur->ne[0],
+            /* ne1   */ cur->ne[1] - 2,
+            /* ne2   */ cur->ne[2],
+            /* nb1   */ cur->nb[1],
+            /* nb2   */ cur->nb[2],
+            /* offset*/ offset_bytes
+        );
+        cb(cur_sliced, "cur_sliced", -1);
+
+        ggml_tensor * cur_padded = ggml_pad(ctx0, cur_sliced,
+            /*p0=*/0, /*p1=*/1,  // no pad on the n_embd dimension
+            /*p2=*/0, /*p3=*/0   // pad +1 at the end of the tokens dimension
+        );
+        cb(cur_padded, "cur_padded", -1);
+        // PRINT_TENSOR_DIMS("cur_padded", cur_padded)
+
+        ggml_tensor* permuted_tensor =
+            ggml_cont(ctx0, ggml_permute(ctx0, cur_padded,  2, 0, 1, 3));
+        cb(permuted_tensor, "permuted_tensor", -1);
+        // PRINT_TENSOR_DIMS("permuted_tensor", permuted_tensor)
+
+        // ggml_tensor* cw0 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv0,  1, 0, 2, 3));
+        // cb(cw0, "cw0", -1);
+
+        // ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, cw0, permuted_tensor, 1, 1, 3, 0, 1, 1);
+        ggml_tensor* cur_conv0 = ggml_conv_2d(ctx0, model.conv0, permuted_tensor, 1, 1, 3, 0, 1, 1);
+        cb(cur_conv0, "cur_conv0", -1);
+        //PRINT_TENSOR_DIMS("cur_conv0", cur_conv0)
+        // ggml_graph_print(gf);
+
+        ggml_tensor* cur_conv0b = ggml_add_inplace(ctx0, cur_conv0, ggml_reshape_4d(ctx0, model.conv0_b, 1, 1, 32, 1));
+        cb(cur_conv0b, "cur_conv0b", -1);
+        //PRINT_TENSOR_DIMS("cur_conv0b", cur_conv0b)
+
+        ggml_tensor* cur_relu = ggml_relu_inplace(ctx0, cur_conv0b);
+        cb(cur_relu, "cur_relu", -1);
+        //PRINT_TENSOR_DIMS("cur_relu", cur_relu)
+
+        // ggml_tensor* cw3 = ggml_cont(ctx0, ggml_permute(ctx0, model.conv3, 1, 0, 2, 3));
+        // cb(cw3, "cw3", -1);
+
+        // ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, cw3, cur_relu, 1, 1, 3, 0, 1, 1);
+        ggml_tensor* cur_conv3 = ggml_conv_2d(ctx0, model.conv3, cur_relu, 1, 1, 3, 0, 1, 1);
+        cb(cur_conv3, "cur_conv3", -1);
+        //PRINT_TENSOR_DIMS("cur_conv3", cur_conv3)
+
+        ggml_tensor* cur_conv3b = ggml_add_inplace(ctx0, cur_conv3, ggml_reshape_4d(ctx0, model.conv3_b, 1, 1, 20, 1));
+        cb(cur_conv3b, "result_embd_pooled", -1);
+        //PRINT_TENSOR_DIMS("cur_conv3b", cur_conv3b)
+
+        ggml_build_forward_expand(gf, cur_conv3b);
+        // ggml_graph_print(gf);
+#endif
 
         return gf;
     }
@@ -11200,6 +11267,7 @@ static int llama_decode_impl(
                         // extract token embeddings
                         GGML_ASSERT(lctx.embd != nullptr);
                         float * embd_out = lctx.embd + n_outputs_prev*n_embd;
+
                         const int32_t n_outputs_new = lctx.n_outputs;
 
                         if (n_outputs_new) {
@@ -11437,8 +11505,12 @@ static int llama_encode_impl(
                         GGML_ASSERT(lctx.embd != nullptr);
                         float * embd_out = lctx.embd;
 
+                        int out_channels = 20;
+                        ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, (n_tokens - 1)*out_channels*sizeof(float));
+#if 0
                         GGML_ASSERT(n_tokens*n_embd <= (int64_t) lctx.embd_size);
                         ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_tokens*n_embd*sizeof(float));
+#endif
                     } break;
                 case LLAMA_POOLING_TYPE_MEAN:
                 case LLAMA_POOLING_TYPE_CLS:
@@ -12332,7 +12404,8 @@ struct llama_context * llama_new_context_with_model(
             int n_nodes_pp = ggml_graph_n_nodes(gf_pp);
 
             // reserve with tg graph to get the number of splits and nodes
-            llama_ubatch ubatch_tg = { true, 1, 1, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr};
+            std::vector<llama_token> tokens = { token, token, token };
+            llama_ubatch ubatch_tg = { true, 3, 3, n_seqs, tokens.data(), nullptr, nullptr, nullptr, nullptr, nullptr};
             ggml_cgraph * gf_tg = llama_build_graph(*ctx, ubatch_tg, true);
             ggml_backend_sched_reserve(ctx->sched.get(), gf_tg);
             int n_splits_tg = ggml_backend_sched_get_n_splits(ctx->sched.get());
@@ -12478,6 +12551,10 @@ int32_t llama_decode(
 
 const char * llama_token_get_text(const struct llama_model * model, llama_token token) {
     return llama_token_get_text_impl(model->vocab, token);
+}
+
+llama_token llama_token_get_token(const struct llama_model * model, const char* text) {
+    return llama_token_get_token_impl(model->vocab, text);
 }
 
 float llama_token_get_score(const struct llama_model * model, llama_token token) {

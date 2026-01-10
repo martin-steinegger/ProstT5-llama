@@ -10248,28 +10248,124 @@ class SmallThinkerModel(TextModel):
                 raise ValueError(f"Unprocessed experts: {experts}")
 
 
-@ModelBase.register("ModernBertModel", "ModernBertForMaskedLM", "ModernBertForSequenceClassification")
+PROSTT5_MINI_TOKENS = [
+    "<pad>", "</s>", "<unk>",
+    "A", "L", "G", "V", "S", "R", "E", "D", "T", "I", "P", "K", "F", "Q", "N",
+    "Y", "M", "H", "W", "C", "X", "B", "O", "U", "Z",
+]
+PROSTT5_MINI_CLASS_LABELS = [
+    "A", "C", "D", "E", "F", "G", "H", "I", "K", "L",
+    "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y",
+]
+
+
+@ModelBase.register("ModernBertModel", "ModernBertForMaskedLM", "ModernBertForSequenceClassification", "ModernProst")
 class ModernBertModel(BertModel):
     model_arch = gguf.MODEL_ARCH.MODERN_BERT
 
+    def _is_prostt5_mini(self) -> bool:
+        if self.hparams.get("vocab_size") != len(PROSTT5_MINI_TOKENS):
+            return False
+        model_type = self.hparams.get("model_type")
+        return model_type in ("modernprost", "modernbert") or self.hf_arch in ("ModernProst", "ModernBertModel")
+
     def set_vocab(self):
-        self.gguf_writer.add_add_bos_token(True)
-        self.gguf_writer.add_add_eos_token(True)
-        self.gguf_writer.add_add_sep_token(True)
-        self._set_vocab_gpt2()
+        if self._is_prostt5_mini():
+            vocab_path = self.dir_model / "vocab.json"
+            if vocab_path.is_file():
+                with open(vocab_path, "r", encoding="utf-8") as f:
+                    vocab = json.load(f)
+                tokens_by_id = [None] * len(vocab)
+                for tok, idx in vocab.items():
+                    if 0 <= idx < len(tokens_by_id):
+                        tokens_by_id[idx] = tok
+                if all(tok is not None for tok in tokens_by_id):
+                    tokens_list = tokens_by_id
+                else:
+                    tokens_list = PROSTT5_MINI_TOKENS
+            else:
+                tokens_list = PROSTT5_MINI_TOKENS
+
+            tokens = [t.encode("utf-8") for t in tokens_list]
+            toktypes = []
+            for tok in tokens_list:
+                if tok in ("<pad>", "</s>"):
+                    toktypes.append(gguf.TokenType.CONTROL)
+                elif tok == "<unk>":
+                    toktypes.append(gguf.TokenType.UNKNOWN)
+                else:
+                    toktypes.append(gguf.TokenType.NORMAL)
+
+            self.gguf_writer.add_add_bos_token(False)
+            self.gguf_writer.add_add_eos_token(False)
+            self.gguf_writer.add_add_sep_token(False)
+            self.gguf_writer.add_tokenizer_model("bert")
+            self.gguf_writer.add_tokenizer_pre("default")
+            self.gguf_writer.add_token_list(tokens)
+            self.gguf_writer.add_token_types(toktypes)
+            token_ids = {tok: idx for idx, tok in enumerate(tokens_list)}
+            self.gguf_writer.add_pad_token_id(token_ids["<pad>"])
+            self.gguf_writer.add_eos_token_id(token_ids["</s>"])
+            self.gguf_writer.add_unk_token_id(token_ids["<unk>"])
+            self.gguf_writer.add_bos_token_id(token_ids["</s>"])
+            self.gguf_writer.add_sep_token_id(token_ids["</s>"])
+            self.gguf_writer.add_mask_token_id(token_ids["<unk>"])
+        else:
+            self.gguf_writer.add_add_bos_token(True)
+            self.gguf_writer.add_add_eos_token(True)
+            self.gguf_writer.add_add_sep_token(True)
+            self._set_vocab_gpt2()
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
-        self.gguf_writer.add_sliding_window(self.hparams["local_attention"])
-        if (sliding_window_pattern := self.hparams.get("global_attn_every_n_layers")) is not None:
+        local_attention = self.hparams.get("local_attention")
+        if local_attention is None and self._is_prostt5_mini():
+            local_attention = 128
+        if local_attention is not None:
+            self.gguf_writer.add_sliding_window(local_attention)
+
+        sliding_window_pattern = self.hparams.get("global_attn_every_n_layers")
+        if sliding_window_pattern is None and self._is_prostt5_mini():
+            sliding_window_pattern = 3
+        if sliding_window_pattern is not None:
             self.gguf_writer.add_sliding_window_pattern(sliding_window_pattern)
+        if (num_heads := self.hparams.get("num_heads")) is not None:
+            self.gguf_writer.add_head_count(num_heads)
+            self.gguf_writer.add_head_count_kv(num_heads)
+        if (norm_eps := self.hparams.get("norm_eps")) is not None:
+            self.gguf_writer.add_layer_norm_eps(norm_eps)
         self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.NONE)
         self.gguf_writer.add_vocab_size(self.hparams["vocab_size"])
+        if self._is_prostt5_mini():
+            if self.find_hparam(
+                [
+                    "max_position_embeddings",
+                    "n_ctx",
+                    "n_positions",
+                    "max_length",
+                    "max_sequence_length",
+                    "model_max_length",
+                ],
+                optional=True,
+            ) is None:
+                self.gguf_writer.add_context_length(8192)
+            self.gguf_writer.add_layer_norm_eps(1e-5)
+            self.gguf_writer.add_rope_freq_base_swa(10000.0)
+            self.gguf_writer.add_classifier_output_labels(PROSTT5_MINI_CLASS_LABELS)
+            self.gguf_writer.add_embedding_length_out(len(PROSTT5_MINI_CLASS_LABELS))
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # these layers act as MLM head, so we don't need them
         if name.startswith("decoder."):
             return []
+
+        if self._is_prostt5_mini():
+            if name == "projection.weight":
+                name = "classifier.out_proj.weight"
+            elif name == "projection.bias":
+                name = "classifier.out_proj.bias"
+            elif name.startswith("projection."):
+                raise ValueError("Unsupported ProstT5 ModernBERT projection head; only linear projection is supported.")
 
         if name.startswith("model."):
             name = name[6:]

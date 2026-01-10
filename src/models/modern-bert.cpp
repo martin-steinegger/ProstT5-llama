@@ -83,15 +83,25 @@ llm_build_modern_bert::llm_build_modern_bert(const llama_model & model, const ll
                 LLM_NORM, il);
         cb(cur, "ffn_norm", il);
 
-        cur = build_ffn(cur,
-                model.layers[il].ffn_up,   NULL, NULL,
-                NULL,                      NULL, NULL,
-                model.layers[il].ffn_down, NULL, NULL,
-                NULL,
-                LLM_FFN_GEGLU, LLM_FFN_SEQ, il);
+        const bool use_swapped_swiglu = (model.vocab.n_tokens() == 28 && model.hparams.n_cls_out == 20);
+        if (use_swapped_swiglu) {
+            ggml_tensor * ffn_up = build_lora_mm(model.layers[il].ffn_up, cur);
+            cb(ffn_up, "ffn_up", il);
+            cur = ggml_swiglu_swapped(ctx0, ffn_up);
+            cb(cur, "ffn_swiglu", il);
+            cur = build_lora_mm(model.layers[il].ffn_down, cur);
+        } else {
+            cur = build_ffn(cur,
+                    model.layers[il].ffn_up,   NULL, NULL,
+                    NULL,                      NULL, NULL,
+                    model.layers[il].ffn_down, NULL, NULL,
+                    NULL,
+                    LLM_FFN_GEGLU, LLM_FFN_SEQ, il);
+        }
 
         // attentions bypass the intermediate layer
         cur = ggml_add(ctx0, cur, ffn_inp);
+        cb(cur, "l_out", il);
 
         // input for next layer
         inpL = cur;

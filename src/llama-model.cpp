@@ -572,7 +572,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
 
     // rope_freq_base (optional)
     hparams.rope_freq_base_train = 10000.0f;
-    ml.get_key(LLM_KV_ROPE_FREQ_BASE, hparams.rope_freq_base_train, false);
+const bool has_rope_freq_base = ml.get_key(LLM_KV_ROPE_FREQ_BASE, hparams.rope_freq_base_train, false);
 
     std::string rope_scaling("linear");
     ml.get_key(LLM_KV_ROPE_SCALING_TYPE, rope_scaling, false);
@@ -889,6 +889,11 @@ void llama_model::load_hparams(llama_model_loader & ml) {
             } break;
         case LLM_ARCH_MODERN_BERT:
             {
+if (!has_rope_freq_base) {
+                    // ModernBert defaults to a larger global RoPE base.
+                    hparams.rope_freq_base_train = 160000.0f;
+                }
+
                 const bool found_swa = ml.get_key(LLM_KV_ATTENTION_SLIDING_WINDOW, hparams.n_swa, false);
                 if (found_swa && hparams.n_swa > 0) {
                     uint32_t swa_period = 3;
@@ -896,7 +901,8 @@ void llama_model::load_hparams(llama_model_loader & ml) {
 
                     ml.get_key(LLM_KV_ROPE_FREQ_BASE_SWA, hparams.rope_freq_base_train_swa);
                     ml.get_key_or_arr(LLM_KV_ATTENTION_SLIDING_WINDOW_PATTERN, swa_period, false);
-                    hparams.set_swa_pattern(swa_period);
+// ModernBert uses global attention on layers divisible by the period.
+                    hparams.set_swa_pattern(swa_period, /* dense_first = */ true);
                 } else {
                     hparams.swa_type = LLAMA_SWA_TYPE_NONE;
                 }
@@ -7497,10 +7503,19 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
     std::unique_ptr<llm_graph_context> llm;
 
 #if LLAMA_ENCODER_ONLY
-    if (arch != LLM_ARCH_T5ENCODER) {
-        GGML_ABORT("encoder-only build supports only t5encoder");
-    }
+    switch (arch) {
+        case LLM_ARCH_T5ENCODER:
     llm = std::make_unique<llm_build_t5_enc>(*this, params);
+break;
+        case LLM_ARCH_BERT:
+            llm = std::make_unique<llm_build_bert>(*this, params);
+            break;
+        case LLM_ARCH_MODERN_BERT:
+            llm = std::make_unique<llm_build_modern_bert>(*this, params);
+            break;
+        default:
+            GGML_ABORT("encoder-only build supports only t5encoder/bert/modern-bert");
+    }
 #else
     switch (arch) {
         case LLM_ARCH_LLAMA:

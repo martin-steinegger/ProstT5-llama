@@ -275,7 +275,7 @@ static int ggml_backend_cpu_x86_score() {
     score += 1<<1;
 #endif
 #ifdef GGML_SSE42
-    if (!is.SSE42()) { return 0; }
+    if (!is.SSE41()) { return 0; }
     score += 1<<2;
 #endif
 #ifdef GGML_BMI2

@@ -146,13 +146,28 @@ static void get_rows_cuda_float(
     const size_t s12 = nb12 / sizeof(int32_t);
     // const size_t s13 = nb13 / sizeof(int32_t);
 
-    k_get_rows_float<<<block_nums, block_dims, 0, stream>>>(
-        src0_d, src1_d, dst_d,
-        ne00, /*ne01, ne02, ne03,*/
-        /*ne10,*/ ne11, ne12, /*ne13,*/
-        /* s0,*/ s1, s2, s3,
-        /* nb00,*/ nb01, nb02, nb03,
-        s10, s11, s12/*, s13*/);
+    // CUDA grids typically cannot exceed 65535 in .y dimension
+    static const int64_t MAX_GRID_Y = 65535;
+    for (int64_t startY = 0; startY < ne10; startY += MAX_GRID_Y) {
+        int64_t chunkSizeY = std::min<int64_t>(MAX_GRID_Y, ne10 - startY);
+
+        // launch chunkSizeY blocks in the Y-dimension instead of the entire ne10
+        dim3 block_nums_chunk(block_num_x, chunkSizeY, ne11*ne12);
+
+        // pointer offset: since the kernel calculates src1[i10*s10 + ...] and dst[i10*s1 + ...],
+        // we shift src1_d/dst_d by (startY * stride) so that when i10=0 in the kernel,
+        // it corresponds to row "startY" in the overall space.
+        const int32_t * src1_d_offset = src1_d + startY * s10;
+        dst_t        * dst_d_offset  = dst_d + startY * s1;
+
+        k_get_rows_float<<<block_nums_chunk, block_dims, 0, stream>>>(
+            src0_d, src1_d_offset, dst_d_offset,
+            ne00, /*ne01, ne02, ne03,*/
+            /*ne10,*/ ne11, ne12, /*ne13,*/
+            /* s0,*/ s1, s2, s3,
+            /* nb00,*/ nb01, nb02, nb03,
+            s10, s11, s12/*, s13*/);
+    }
 }
 
 template <typename dst_t>

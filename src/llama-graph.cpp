@@ -2093,7 +2093,11 @@ void llm_graph_context::build_pooling(
         ggml_tensor * cls,
         ggml_tensor * cls_b,
         ggml_tensor * cls_out,
-        ggml_tensor * cls_out_b) const {
+        ggml_tensor * cls_out_b,
+        ggml_tensor * conv0,
+        ggml_tensor * conv0_b,
+        ggml_tensor * conv3,
+        ggml_tensor * conv3_b) const {
     if (!cparams.embeddings) {
         return;
     }
@@ -2165,6 +2169,52 @@ void llm_graph_context::build_pooling(
             {
                 GGML_ABORT("unknown pooling type");
             }
+    }
+
+    if (conv0 && conv0_b && conv3 && conv3_b) {
+        cb(cur, "result_embd_pooled_plm", -1);
+        res->t_embd_pooled = cur;
+        ggml_build_forward_expand(gf, cur);
+
+        // prostt5 conv head
+        size_t offset_bytes = cur->nb[1] * 1ULL;  // skip one row in the dim1 direction
+        ggml_tensor * cur_sliced = ggml_view_3d(
+            ctx0,
+            cur,
+            cur->ne[0],
+            cur->ne[1] - 2,
+            cur->ne[2],
+            cur->nb[1],
+            cur->nb[2],
+            offset_bytes
+        );
+        cb(cur_sliced, "cur_sliced", -1);
+
+        ggml_tensor * cur_padded = ggml_pad(ctx0, cur_sliced, 0, 1, 0, 0);
+        cb(cur_padded, "cur_padded", -1);
+
+        ggml_tensor * permuted_tensor =
+            ggml_cont(ctx0, ggml_permute(ctx0, cur_padded, 2, 0, 1, 3));
+        cb(permuted_tensor, "permuted_tensor", -1);
+
+        ggml_tensor * cur_conv0 = ggml_conv_2d(ctx0, conv0, permuted_tensor, 1, 1, 3, 0, 1, 1);
+        cb(cur_conv0, "cur_conv0", -1);
+
+        ggml_tensor * cur_conv0b = ggml_add_inplace(ctx0, cur_conv0, ggml_reshape_4d(ctx0, conv0_b, 1, 1, 32, 1));
+        cb(cur_conv0b, "cur_conv0b", -1);
+
+        ggml_tensor * cur_relu = ggml_relu_inplace(ctx0, cur_conv0b);
+        cb(cur_relu, "cur_relu", -1);
+
+        ggml_tensor * cur_conv3 = ggml_conv_2d(ctx0, conv3, cur_relu, 1, 1, 3, 0, 1, 1);
+        cb(cur_conv3, "cur_conv3", -1);
+
+        ggml_tensor * cur_conv3b = ggml_add_inplace(ctx0, cur_conv3, ggml_reshape_4d(ctx0, conv3_b, 1, 1, 20, 1));
+        cb(cur_conv3b, "result_embd_pooled", -1);
+
+        res->t_embd_pooled = cur_conv3b;
+        ggml_build_forward_expand(gf, cur_conv3b);
+        return;
     }
 
     cb(cur, "result_embd_pooled", -1);

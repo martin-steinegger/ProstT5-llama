@@ -889,7 +889,11 @@ struct llm_graph_context {
             ggml_tensor * cls,
             ggml_tensor * cls_b,
             ggml_tensor * cls_out,
-            ggml_tensor * cls_out_b) const;
+            ggml_tensor * cls_out_b,
+            ggml_tensor * conv0,
+            ggml_tensor * conv0_b,
+            ggml_tensor * conv3,
+            ggml_tensor * conv3_b) const;
 
     //
     // sampling (backend sampling)

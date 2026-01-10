@@ -665,11 +665,43 @@ struct llm_tokenizer_wpm : llm_tokenizer {
 };
 
 struct llm_tokenizer_wpm_session {
-    llm_tokenizer_wpm_session(const llama_vocab & vocab) : vocab(vocab) {}
+    llm_tokenizer_wpm_session(const llama_vocab & vocab) : vocab(vocab) {
+        bool has_upper = false;
+        bool has_lower = false;
+        bool has_phantom = false;
+
+        const uint32_t n_vocab = vocab.n_tokens();
+        for (uint32_t id = 0; id < n_vocab; ++id) {
+            if (vocab.token_get_attr(id) != LLAMA_TOKEN_ATTR_NORMAL) {
+                continue;
+            }
+            const char * text = vocab.token_get_text(id);
+            if (!text) {
+                continue;
+            }
+            if (!has_phantom && strncmp(text, "\xe2\x96\x81", 3) == 0) {
+                has_phantom = true;
+            }
+            for (const unsigned char * p = reinterpret_cast<const unsigned char *>(text); *p; ++p) {
+                const unsigned char c = *p;
+                if (c >= 'A' && c <= 'Z') {
+                    has_upper = true;
+                } else if (c >= 'a' && c <= 'z') {
+                    has_lower = true;
+                }
+            }
+            if (has_upper && has_lower && has_phantom) {
+                break;
+            }
+        }
+
+        use_phantom_space = has_phantom;
+        do_lowercase = !has_upper && has_lower;
+    }
 
     void tokenize(const std::string & text, std::vector<llama_token> & output) {
         // normalize and split by whitespace
-        std::vector<std::string> words = preprocess(text);
+        std::vector<std::string> words = preprocess(text, do_lowercase);
         // bos token prepended already
 
         // find the longest tokens that form the words
@@ -680,7 +712,7 @@ struct llm_tokenizer_wpm_session {
             }
 
             // prepend phantom space
-            const std::string word1 = "\xe2\x96\x81" + word;
+            const std::string word1 = use_phantom_space ? "\xe2\x96\x81" + word : word;
             const int n = word1.size();
 
             const size_t current_tokens = output.size();
@@ -714,7 +746,7 @@ struct llm_tokenizer_wpm_session {
     }
 
     // TODO: reduce string copies by using cpts_offs array
-    static std::vector<std::string> preprocess(const std::string & text)  {
+    static std::vector<std::string> preprocess(const std::string & text, bool do_lowercase)  {
         const std::vector<uint32_t> cpts_nfd = unicode_cpts_normalize_nfd(unicode_cpts_from_utf8(text));
         std::vector<std::string> words(1, "");
 
@@ -733,7 +765,7 @@ struct llm_tokenizer_wpm_session {
                 continue;
             }
 
-            const std::string s = unicode_cpt_to_utf8(unicode_tolower(cpt));
+            const std::string s = unicode_cpt_to_utf8(do_lowercase ? unicode_tolower(cpt) : cpt);
             if (flags.is_punctuation || ( cpt < 0x7F && flags.is_symbol ) || is_chinese_char(cpt)) {
                 if (words.back().size()) {  // finish previous word if any
                     words.emplace_back();
@@ -768,6 +800,8 @@ struct llm_tokenizer_wpm_session {
 
 private:
     const llama_vocab & vocab;
+    bool use_phantom_space = true;
+    bool do_lowercase = true;
     // currently unused
     // const llm_tokenizer_wpm * wpm_tokenizer;
 };

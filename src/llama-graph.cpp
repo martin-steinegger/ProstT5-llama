@@ -2118,10 +2118,22 @@ void llm_graph_context::build_pooling(
 
     ggml_tensor * cur;
 
+const bool use_token_classifier = arch == LLM_ARCH_MODERN_BERT &&
+        hparams.n_cls_out == 20 &&
+        cls_out != nullptr &&
+        pooling_type == LLAMA_POOLING_TYPE_NONE;
+
     switch (pooling_type) {
         case LLAMA_POOLING_TYPE_NONE:
             {
+if (use_token_classifier) {
+                    cur = ggml_mul_mat(ctx0, cls_out, inp);
+                    if (cls_out_b) {
+                        cur = ggml_add(ctx0, cur, cls_out_b);
+                    }
+                } else {
                 cur = inp;
+}
             } break;
         case LLAMA_POOLING_TYPE_MEAN:
             {

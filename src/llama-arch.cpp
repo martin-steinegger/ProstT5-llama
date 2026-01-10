@@ -1643,6 +1643,7 @@ static std::set<llm_tensor> llm_get_tensor_names(llm_arch arch) {
                 LLM_TENSOR_ENC_FFN_GATE,
                 LLM_TENSOR_ENC_FFN_DOWN,
                 LLM_TENSOR_ENC_FFN_UP,
+                LLM_TENSOR_CONV1D,
             };
         case LLM_ARCH_JAIS:
             return {
@@ -2476,6 +2477,17 @@ LLM_TN_IMPL::LLM_TN_IMPL(llm_arch arch, llm_tensor tensor, const char * suffix, 
 std::string LLM_TN_IMPL::str() const {
     if (LLM_TENSOR_NAMES.find(tensor) == LLM_TENSOR_NAMES.end()) {
         GGML_ABORT("unknown tensor name for tensor id %d", static_cast<int>(tensor));
+    }
+
+    if (arch == LLM_ARCH_T5ENCODER && tensor == LLM_TENSOR_CONV1D) {
+        const int idx = xid >= 0 ? xid : bid;
+        GGML_ASSERT(idx >= 0);
+        std::string name = ::format("classifier.%d", idx);
+        if (suffix != nullptr) {
+            name += ".";
+            name += suffix;
+        }
+        return name;
     }
 
     if (model_tensors.find(tensor) == model_tensors.end()) {

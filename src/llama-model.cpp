@@ -5117,6 +5117,11 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_down_enc = create_tensor(tn(LLM_TENSOR_ENC_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
                         layer.ffn_up_enc   = create_tensor(tn(LLM_TENSOR_ENC_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
+
+                    conv0   = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", -1, 0), {7, 1, n_embd, 32}, 0);
+                    conv0_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias",   -1, 0), {32}, 0);
+                    conv3   = create_tensor(tn(LLM_TENSOR_CONV1D, "weight", -1, 3), {7, 1,   32, 20}, 0);
+                    conv3_b = create_tensor(tn(LLM_TENSOR_CONV1D, "bias",   -1, 3), {20}, 0);
                 } break;
             case LLM_ARCH_JAIS:
                 {
@@ -7358,6 +7363,11 @@ ggml_tensor * llama_model::get_rope_factors(const llama_cparams & cparams, int i
 }
 
 llama_memory_i * llama_model::create_memory(const llama_memory_params & params, const llama_cparams & cparams) const {
+#if LLAMA_ENCODER_ONLY
+    (void) params;
+    (void) cparams;
+    return nullptr;
+#else
     llama_memory_i * res;
 
     switch (arch) {
@@ -7480,11 +7490,18 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
     }
 
     return res;
+#endif
 }
 
 ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
     std::unique_ptr<llm_graph_context> llm;
 
+#if LLAMA_ENCODER_ONLY
+    if (arch != LLM_ARCH_T5ENCODER) {
+        GGML_ABORT("encoder-only build supports only t5encoder");
+    }
+    llm = std::make_unique<llm_build_t5_enc>(*this, params);
+#else
     switch (arch) {
         case LLM_ARCH_LLAMA:
             {
@@ -7946,9 +7963,10 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
         default:
             GGML_ABORT("fatal error");
     }
+#endif
 
     // add on pooling layer
-    llm->build_pooling(cls, cls_b, cls_out, cls_out_b);
+    llm->build_pooling(cls, cls_b, cls_out, cls_out_b, conv0, conv0_b, conv3, conv3_b);
 
     // add backend sampling layers (if any)
     llm->build_sampling();
@@ -8308,14 +8326,24 @@ bool llama_model_has_encoder(const llama_model * model) {
 }
 
 bool llama_model_has_decoder(const llama_model * model) {
+#if LLAMA_ENCODER_ONLY
+    (void) model;
+    return false;
+#else
     switch (model->arch) {
         case LLM_ARCH_T5ENCODER: return false;
         default:                 return true;
     }
+#endif
 }
 
 llama_token llama_model_decoder_start_token(const llama_model * model) {
+#if LLAMA_ENCODER_ONLY
+    (void) model;
+    return -1;
+#else
     return model->hparams.dec_start_token_id;
+#endif
 }
 
 bool llama_model_is_recurrent(const llama_model * model) {

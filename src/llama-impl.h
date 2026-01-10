@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#define LLAMA_ENCODER_ONLY 1
+
 #ifdef __GNUC__
 #    if defined(__MINGW32__) && !defined(__clang__)
 #        define LLAMA_ATTRIBUTE_FORMAT(...) __attribute__((format(gnu_printf, __VA_ARGS__)))

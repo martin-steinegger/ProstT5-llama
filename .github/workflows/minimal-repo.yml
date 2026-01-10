@@ -1,0 +1,32 @@
+name: deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  no-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+         persist-credentials: false
+         fetch-depth: 0
+      - uses: actions/setup-python@v5
+      - name: Filter Repository
+        run: |
+          pip install git-filter-repo
+          git filter-repo \
+            --path CMakeLists.txt \
+            --path LICENSE \
+            --path cmake \
+            --path ggml \
+            --path include \
+            --path src \
+            --prune-empty always \
+            --force
+      - name: GitHub Push
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: minimal

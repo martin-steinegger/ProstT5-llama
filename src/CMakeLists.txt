@@ -6,7 +6,7 @@ llama_add_compile_flags()
 
 # llama
 
-add_library(llama
+set(LLAMA_MODEL_SOURCES
             ../include/llama.h
             llama.cpp
             llama-adapter.cpp
@@ -140,6 +140,13 @@ add_library(llama
             models/graph-context-mamba.cpp
             )
 
+set(LLAMA_MODEL_INCLUDE models/bert.cpp models/modern-bert.cpp models/t5-enc.cpp)
+foreach (source_file IN LISTS LLAMA_MODEL_SOURCES)
+    if (source_file MATCHES "^models/" AND NOT source_file IN_LIST LLAMA_MODEL_INCLUDE)
+        list(REMOVE_ITEM LLAMA_MODEL_SOURCES ${source_file})
+    endif()
+endforeach()
+add_library(llama ${LLAMA_MODEL_SOURCES})
 set_target_properties(llama PROPERTIES
     VERSION ${LLAMA_INSTALL_VERSION}
     SOVERSION 0

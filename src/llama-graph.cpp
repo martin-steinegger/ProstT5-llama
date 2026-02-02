@@ -2119,9 +2119,10 @@ void llm_graph_context::build_pooling(
     ggml_tensor * cur;
 
 const bool use_token_classifier = arch == LLM_ARCH_MODERN_BERT &&
-        hparams.n_cls_out == 20 &&
         cls_out != nullptr &&
-        pooling_type == LLAMA_POOLING_TYPE_NONE;
+        pooling_type == LLAMA_POOLING_TYPE_NONE &&
+        hparams.n_embd_out > 0 &&
+        hparams.n_embd_out == hparams.n_cls_out;
 
     switch (pooling_type) {
         case LLAMA_POOLING_TYPE_NONE:

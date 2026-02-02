@@ -10353,6 +10353,8 @@ class ModernBertModel(BertModel):
             self.gguf_writer.add_rope_freq_base_swa(10000.0)
             self.gguf_writer.add_classifier_output_labels(PROSTT5_MINI_CLASS_LABELS)
             self.gguf_writer.add_embedding_length_out(len(PROSTT5_MINI_CLASS_LABELS))
+            if self.hparams.get("modernprost_profiles"):
+                self.gguf_writer.add_string("modernprost.profiles", "true")
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # these layers act as MLM head, so we don't need them
@@ -11090,6 +11092,11 @@ def parse_args() -> argparse.Namespace:
               "It can be used for sentence-transformers models, like google/embeddinggemma-300m. "
               "Default these modules are not included.")
     )
+    parser.add_argument(
+        "--modernprost-profiles", action="store_true",
+        help=("Mark ModernProst/ModernBert models as profile-emitting. "
+              "Use this when converting ModernProst profile weights."),
+    )
 
     args = parser.parse_args()
     if not args.print_supported_models and args.model is None:
@@ -11204,6 +11211,8 @@ def main() -> None:
         output_type = ftype_map[args.outtype]
         model_type = ModelType.MMPROJ if args.mmproj else ModelType.TEXT
         hparams = ModelBase.load_hparams(dir_model, is_mistral_format)
+        if args.modernprost_profiles:
+            hparams["modernprost_profiles"] = True
         if not is_mistral_format:
             model_architecture = get_model_architecture(hparams, model_type)
             logger.info(f"Model architecture: {model_architecture}")
@@ -11228,7 +11237,8 @@ def main() -> None:
                                      split_max_size=split_str_to_n_bytes(args.split_max_size), dry_run=args.dry_run,
                                      small_first_shard=args.no_tensor_first_split,
                                      remote_hf_model_id=hf_repo_id, disable_mistral_community_chat_template=disable_mistral_community_chat_template,
-                                     sentence_transformers_dense_modules=args.sentence_transformers_dense_modules
+                                     sentence_transformers_dense_modules=args.sentence_transformers_dense_modules,
+                                     hparams=hparams,
                                      )
 
         if args.vocab_only:
